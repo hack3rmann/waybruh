@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/waybruh",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GNU GPLv3"
+rust-version = "1.94.1"
+authors = [
+    "Varov Svyatoslav <slava-varov3@mail.ru>",
+    "Mukhachev Petr <petr_nt@bk.ru>",
+]
+repository = "https://www.github.com/hack3rmann/waybruh"
+
+[workspace.dependencies]
+slint = { version = "1.15.1", default-features = false }
+i-slint-renderer-skia = { version = "1.15.1", default-features = false, features = ["vulkan"] }
