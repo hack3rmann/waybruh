@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/slint-backend-wayland",
     "crates/waybruh",
 ]
 
@@ -16,5 +17,5 @@ authors = [
 repository = "https://www.github.com/hack3rmann/waybruh"
 
 [workspace.dependencies]
-slint = { version = "1.15.1", default-features = false }
+slint = { version = "1.15.1", default-features = false, features = ["compat-1-2"] }
 i-slint-renderer-skia = { version = "1.15.1", default-features = false, features = ["vulkan"] }
