@@ -6,7 +6,7 @@ use i_slint_renderer_skia::{SkiaRenderer, SkiaSharedContext};
 use lazy_static::lazy_static;
 use slint::{
     PhysicalSize, PlatformError, Window,
-    platform::{Platform, Renderer, WindowAdapter},
+    platform::{Platform, Renderer, SetPlatformError, WindowAdapter},
 };
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use std::{
@@ -14,15 +14,33 @@ use std::{
     time::Instant,
 };
 
-pub struct WaylandBackend {
-    wayland: Wayland,
+pub fn init() -> Result<(), SetPlatformError> {
+    slint::platform::set_platform(Box::new(WaylandPlatform::new()))
 }
 
 lazy_static! {
     pub static ref INITIAL_INSTANT: Instant = Instant::now();
 }
 
-impl Platform for WaylandBackend {
+pub struct WaylandPlatform {
+    wayland: Wayland,
+}
+
+impl WaylandPlatform {
+    pub fn new() -> Self {
+        Self {
+            wayland: Wayland::default()
+        }
+    }
+}
+
+impl Default for WaylandPlatform {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
         let output = self.wayland.output_state.outputs().next().unwrap();
 

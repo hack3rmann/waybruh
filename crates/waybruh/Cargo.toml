@@ -8,3 +8,5 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+slint-backend-wayland.workspace = true
+slint.workspace = true
