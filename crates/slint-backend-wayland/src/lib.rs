@@ -14,7 +14,7 @@ use slint::{
     PhysicalSize, PlatformError, Window,
     platform::{EventLoopProxy, Platform, Renderer, SetPlatformError, WindowAdapter},
 };
-use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
+use smithay_client_toolkit::reexports::client::{Proxy as _, protocol::wl_output::WlOutput};
 use std::{
     rc::{Rc, Weak},
     sync::Mutex,
@@ -52,17 +52,22 @@ pub struct WaylandPlatform {
     wayland: Wayland,
     event_channel: ChannelWrapper<Event>,
     quit_channel: ChannelWrapper<Quit>,
+    adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
 }
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
         let output = self.wayland.output_state.outputs().next().unwrap();
 
-        Ok(SlintWindowAdapter::new(
-            self.wayland.clone(),
-            output,
-            &SkiaSharedContext::default(),
-        ))
+        let adapter =
+            SlintWindowAdapter::new(self.wayland.clone(), output, &SkiaSharedContext::default());
+
+        {
+            let mut adapters = self.adapters.lock().unwrap();
+            adapters.push(adapter.clone());
+        }
+
+        Ok(adapter)
     }
 
     fn run_event_loop(&self) -> Result<(), PlatformError> {
@@ -93,7 +98,13 @@ impl Platform for WaylandPlatform {
         let mut shared_data = event_loop.get_signal();
 
         event_loop
-            .run(Duration::from_millis(200), &mut shared_data, |_| {})
+            .run(Duration::from_millis(200), &mut shared_data, |_| {
+                let adapters = self.adapters.lock().unwrap();
+
+                for adapter in adapters.iter() {
+                    adapter.renderer.render().unwrap();
+                }
+            })
             .map_err(|_| PlatformError::NoEventLoopProvider)
     }
 
@@ -114,7 +125,19 @@ pub struct SlintWindowAdapter {
 
 impl SlintWindowAdapter {
     pub fn new(wayland: Wayland, output: WlOutput, skia_context: &SkiaSharedContext) -> Rc<Self> {
-        let renderer = SkiaRenderer::default_vulkan(skia_context);
+        let renderer = SkiaRenderer::default_wgpu_28(skia_context);
+
+        let display_handle = wayland.display_handle();
+        let window_handle = wayland.window_handle(&output.id()).unwrap();
+        // FIXE(hack3rmann): hardcoded size
+        let size = wayland.output_size(&output).unwrap_or(PhysicalSize {
+            width: 2520,
+            height: 40,
+        });
+
+        renderer
+            .set_window_handle(window_handle, display_handle, size, None)
+            .unwrap();
 
         Rc::new_cyclic(move |weak: &Weak<Self>| Self {
             window: Window::new(Weak::clone(weak) as Weak<dyn WindowAdapter>),
@@ -131,12 +154,7 @@ impl WindowAdapter for SlintWindowAdapter {
     }
 
     fn size(&self) -> PhysicalSize {
-        self.wayland
-            .output_state
-            .info(&self.output)
-            .map(|i| i.physical_size)
-            .map(|(w, h)| PhysicalSize::new(u32::try_from(w).unwrap(), u32::try_from(h).unwrap()))
-            .unwrap_or_default()
+        self.wayland.output_size(&self.output).unwrap_or_default()
     }
 
     fn renderer(&self) -> &dyn Renderer {
