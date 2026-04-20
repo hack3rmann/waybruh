@@ -12,3 +12,4 @@ slint.workspace = true
 i-slint-renderer-skia.workspace = true
 lazy_static = "1.5.0"
 smithay-client-toolkit = "0.20.0"
+calloop = "0.14.4"

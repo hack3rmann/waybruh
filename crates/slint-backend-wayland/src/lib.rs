@@ -1,43 +1,57 @@
+pub mod event_loop;
 pub mod wayland;
 
-use crate::wayland::Wayland;
-use core::time::Duration;
+use crate::{
+    event_loop::{Event, EventLoopHandle, Quit},
+    wayland::Wayland,
+};
+use calloop::{
+    EventLoop, LoopSignal,
+    channel::{Channel, Event as ChannelEvent, Sender},
+};
 use i_slint_renderer_skia::{SkiaRenderer, SkiaSharedContext};
-use lazy_static::lazy_static;
 use slint::{
     PhysicalSize, PlatformError, Window,
-    platform::{Platform, Renderer, SetPlatformError, WindowAdapter},
+    platform::{EventLoopProxy, Platform, Renderer, SetPlatformError, WindowAdapter},
 };
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use std::{
     rc::{Rc, Weak},
-    time::Instant,
+    sync::Mutex,
+    time::Duration,
 };
 
 pub fn init() -> Result<(), SetPlatformError> {
-    slint::platform::set_platform(Box::new(WaylandPlatform::new()))
+    slint::platform::set_platform(Box::new(WaylandPlatform::default()))
 }
 
-lazy_static! {
-    pub static ref INITIAL_INSTANT: Instant = Instant::now();
+pub struct ChannelWrapper<T> {
+    pub sender: Sender<T>,
+    pub receiver: Mutex<Option<Channel<T>>>,
 }
 
-pub struct WaylandPlatform {
-    wayland: Wayland,
+impl<T> ChannelWrapper<T> {
+    pub fn take_receiver(&self) -> Option<Channel<T>> {
+        let mut receiver = self.receiver.lock().ok()?;
+        receiver.take()
+    }
 }
 
-impl WaylandPlatform {
-    pub fn new() -> Self {
+impl<T> Default for ChannelWrapper<T> {
+    fn default() -> Self {
+        let (sender, receiver) = calloop::channel::channel();
         Self {
-            wayland: Wayland::default()
+            sender,
+            receiver: Mutex::new(Some(receiver)),
         }
     }
 }
 
-impl Default for WaylandPlatform {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Default)]
+pub struct WaylandPlatform {
+    wayland: Wayland,
+    event_channel: ChannelWrapper<Event>,
+    quit_channel: ChannelWrapper<Quit>,
 }
 
 impl Platform for WaylandPlatform {
@@ -51,8 +65,43 @@ impl Platform for WaylandPlatform {
         ))
     }
 
-    fn duration_since_start(&self) -> Duration {
-        INITIAL_INSTANT.elapsed()
+    fn run_event_loop(&self) -> Result<(), PlatformError> {
+        let mut event_loop = EventLoop::<LoopSignal>::try_new().unwrap();
+        let handle = event_loop.handle();
+
+        let event_receiver = self
+            .event_channel
+            .take_receiver()
+            .expect("event receiver should not be taken");
+
+        let quit_receiver = self
+            .quit_channel
+            .take_receiver()
+            .expect("event receiver should not be taken");
+
+        handle
+            .insert_source(event_receiver, |event, _, _| match event {
+                ChannelEvent::Msg(callback) => callback(),
+                ChannelEvent::Closed => {}
+            })
+            .unwrap();
+
+        handle
+            .insert_source(quit_receiver, |_, _, signal| signal.stop())
+            .unwrap();
+
+        let mut shared_data = event_loop.get_signal();
+
+        event_loop
+            .run(Duration::from_millis(200), &mut shared_data, |_| {})
+            .map_err(|_| PlatformError::NoEventLoopProvider)
+    }
+
+    fn new_event_loop_proxy(&self) -> Option<Box<dyn EventLoopProxy>> {
+        Some(Box::new(EventLoopHandle::new(
+            self.event_channel.sender.clone(),
+            self.quit_channel.sender.clone(),
+        )))
     }
 }
 
