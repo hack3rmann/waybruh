@@ -16,4 +16,5 @@ raw-window-handle = "0.6.2"
 
 [dependencies.smithay-client-toolkit]
 git = "https://github.com/hack3rmann/client-toolkit.git"
-features = ["client_system"]
+rev = "1533d54268070edd15cf718cd6c4a18e71e803eb"
+features = ["system"]

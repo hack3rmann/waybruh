@@ -2418,7 +2418,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 [[package]]
 name = "smithay-client-toolkit"
 version = "0.20.0"
-source = "git+https://github.com/hack3rmann/client-toolkit.git#84b927d507a984949dee6dcdca1c66c8388e084d"
+source = "git+https://github.com/hack3rmann/client-toolkit.git?rev=1533d54268070edd15cf718cd6c4a18e71e803eb#1533d54268070edd15cf718cd6c4a18e71e803eb"
 dependencies = [
  "bitflags 2.11.1",
  "bytemuck",
@@ -2431,7 +2431,6 @@ dependencies = [
  "pkg-config",
  "rustix",
  "thiserror",
- "wayland-backend",
  "wayland-client",
  "wayland-csd-frame",
  "wayland-cursor",
