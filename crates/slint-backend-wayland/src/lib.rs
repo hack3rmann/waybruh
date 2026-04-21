@@ -17,7 +17,7 @@ use slint::{
 use smithay_client_toolkit::reexports::client::{Proxy as _, protocol::wl_output::WlOutput};
 use std::{
     rc::{Rc, Weak},
-    sync::{LazyLock, Mutex, RwLock},
+    sync::{LazyLock, Mutex},
     time::Duration,
 };
 
@@ -26,18 +26,24 @@ pub fn init() -> Result<(), SetPlatformError> {
 }
 
 pub mod start_window {
-    use super::*;
+    use std::cell::RefCell;
 
-    pub static SHOW_START_WINDOW: RwLock<fn()> = RwLock::new(|| {});
+    thread_local! {
+        static SHOW_START_WINDOW: RefCell<Option<Box<dyn Fn()>>> = RefCell::new(None);
+    }
 
-    pub fn set(show: fn()) {
-        let mut window = SHOW_START_WINDOW.write().unwrap();
-        *window = show;
+    pub fn set(show: impl Fn() + 'static) {
+        SHOW_START_WINDOW.with_borrow_mut(|window| {
+            *window = Some(Box::new(show));
+        });
     }
 
     pub fn show() {
-        let show = *SHOW_START_WINDOW.read().unwrap();
-        show();
+        SHOW_START_WINDOW.with_borrow(|show| {
+            if let Some(show) = show {
+                show()
+            }
+        });
     }
 }
 
