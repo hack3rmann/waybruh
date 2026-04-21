@@ -9,13 +9,10 @@ use smithay_client_toolkit::{
     output::{OutputData, OutputState},
     reexports::{
         client::{
-            Connection, Dispatch, Proxy, QueueHandle,
-            backend::ObjectId,
-            globals::{GlobalListContents, registry_queue_init},
-            protocol::{
+            Connection, Dispatch, EventQueue, Proxy, QueueHandle, backend::ObjectId, globals::{GlobalListContents, registry_queue_init}, protocol::{
                 wl_compositor::WlCompositor, wl_output::WlOutput, wl_registry::WlRegistry,
                 wl_shm::WlShm, wl_surface::WlSurface,
-            },
+            }
         },
         protocols::xdg::xdg_output::zv1::client::{
             zxdg_output_manager_v1::ZxdgOutputManagerV1, zxdg_output_v1::ZxdgOutputV1,
@@ -30,7 +27,7 @@ use smithay_client_toolkit::{
     },
     shm::{Shm, ShmHandler},
 };
-use std::{collections::HashMap, ops::Deref, ptr::NonNull, sync::Arc};
+use std::{collections::HashMap, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
 use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event as LayerSurfaceEvent;
 
 pub type OutputId = ObjectId;
@@ -204,6 +201,7 @@ impl HasWindowHandle for SurfaceBundle {
 
 pub struct WaylandInner {
     pub connection: Connection,
+    pub event_queue: Mutex<EventQueue<ClientState>>,
     pub registry_state: RegistryState,
     pub compositor_state: CompositorState,
     pub shm_state: Shm,
@@ -261,10 +259,11 @@ impl WaylandInner {
             })
             .collect();
 
-        event_queue.blocking_dispatch(&mut state).unwrap();
+        event_queue.roundtrip(&mut state).unwrap();
 
         Self {
             connection,
+            event_queue: Mutex::new(event_queue),
             registry_state,
             compositor_state,
             shm_state,

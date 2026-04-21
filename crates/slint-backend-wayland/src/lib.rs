@@ -3,7 +3,7 @@ pub mod wayland;
 
 use crate::{
     event_loop::{Event, EventLoopHandle, Quit},
-    wayland::Wayland,
+    wayland::{ClientState, Wayland},
 };
 use calloop::{
     EventLoop, LoopSignal,
@@ -82,7 +82,7 @@ impl Platform for WaylandPlatform {
         let quit_receiver = self
             .quit_channel
             .take_receiver()
-            .expect("event receiver should not be taken");
+            .expect("quit receiver should not be taken");
 
         handle
             .insert_source(event_receiver, |event, _, _| match event {
@@ -99,11 +99,16 @@ impl Platform for WaylandPlatform {
 
         event_loop
             .run(Duration::from_millis(200), &mut shared_data, |_| {
+                slint::platform::update_timers_and_animations();
+
                 let adapters = self.adapters.lock().unwrap();
 
                 for adapter in adapters.iter() {
                     adapter.renderer.render().unwrap();
                 }
+
+                let mut event_queue = self.wayland.event_queue.lock().unwrap();
+                event_queue.roundtrip(&mut ClientState).unwrap();
             })
             .map_err(|_| PlatformError::NoEventLoopProvider)
     }
@@ -154,7 +159,10 @@ impl WindowAdapter for SlintWindowAdapter {
     }
 
     fn size(&self) -> PhysicalSize {
-        self.wayland.output_size(&self.output).unwrap_or_default()
+        // FIXME(hack3rmann): hardcoded size
+        self.wayland
+            .output_size(&self.output)
+            .unwrap_or(PhysicalSize::new(2520, 40))
     }
 
     fn renderer(&self) -> &dyn Renderer {
