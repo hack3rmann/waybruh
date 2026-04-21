@@ -46,6 +46,7 @@ pub struct ClientState {
     pub output_state: OutputState,
     pub registry_state: RegistryState,
     pub surface_state: HashMap<ObjectId, SurfaceState>,
+    pub pending_outputs: Vec<WlOutput>,
 }
 
 impl ClientState {
@@ -54,6 +55,7 @@ impl ClientState {
             output_state,
             registry_state,
             surface_state: HashMap::new(),
+            pending_outputs: Vec::new(),
         }
     }
 
@@ -148,9 +150,26 @@ impl OutputHandler for ClientState {
         &mut self.output_state
     }
 
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
+        self.pending_outputs.push(output);
+
+        slint::invoke_from_event_loop(crate::start_window::show).unwrap();
+    }
+
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
+
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
+        let Some(index) = self
+            .pending_outputs
+            .iter()
+            .enumerate()
+            .find_map(|(i, o)| (o.id() == output.id()).then_some(i))
+        else {
+            return;
+        };
+
+        self.pending_outputs.swap_remove(index);
+    }
 }
 
 delegate_registry!(ClientState);

@@ -7,7 +7,13 @@ slint::slint! {
     }
 }
 
+fn show_window() {
+    HelloWorld::new().unwrap().show().unwrap();
+}
+
 fn main() {
     slint_backend_wayland::init().unwrap();
-    HelloWorld::new().unwrap().run().unwrap();
+    slint_backend_wayland::start_window::set(show_window);
+
+    slint::run_event_loop().unwrap();
 }

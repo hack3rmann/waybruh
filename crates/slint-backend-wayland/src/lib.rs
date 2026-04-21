@@ -17,12 +17,28 @@ use slint::{
 use smithay_client_toolkit::reexports::client::{Proxy as _, protocol::wl_output::WlOutput};
 use std::{
     rc::{Rc, Weak},
-    sync::Mutex,
+    sync::{LazyLock, Mutex, RwLock},
     time::Duration,
 };
 
 pub fn init() -> Result<(), SetPlatformError> {
     slint::platform::set_platform(Box::new(WaylandPlatform::default()))
+}
+
+pub mod start_window {
+    use super::*;
+
+    pub static SHOW_START_WINDOW: RwLock<fn()> = RwLock::new(|| {});
+
+    pub fn set(show: fn()) {
+        let mut window = SHOW_START_WINDOW.write().unwrap();
+        *window = show;
+    }
+
+    pub fn show() {
+        let show = *SHOW_START_WINDOW.read().unwrap();
+        show();
+    }
 }
 
 pub struct ChannelWrapper<T> {
@@ -49,7 +65,7 @@ impl<T> Default for ChannelWrapper<T> {
 
 #[derive(Default)]
 pub struct WaylandPlatform {
-    wayland: Wayland,
+    wayland: LazyLock<Wayland>,
     event_channel: ChannelWrapper<Event>,
     quit_channel: ChannelWrapper<Quit>,
     adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
@@ -58,8 +74,8 @@ pub struct WaylandPlatform {
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
         let output = {
-            let client_state = self.wayland.client_state.lock().unwrap();
-            client_state.output_state.outputs().next().unwrap()
+            let mut state = self.wayland.client_state.lock().unwrap();
+            state.pending_outputs.pop().expect("no outputs left")
         };
 
         let adapter =
