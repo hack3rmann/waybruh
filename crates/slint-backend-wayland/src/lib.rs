@@ -3,7 +3,7 @@ pub mod wayland;
 
 use crate::{
     event_loop::{Event, EventLoopHandle, Quit},
-    wayland::{ClientState, Wayland},
+    wayland::Wayland,
 };
 use calloop::{
     EventLoop, LoopSignal,
@@ -57,7 +57,10 @@ pub struct WaylandPlatform {
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        let output = self.wayland.output_state.outputs().next().unwrap();
+        let output = {
+            let client_state = self.wayland.client_state.lock().unwrap();
+            client_state.output_state.outputs().next().unwrap()
+        };
 
         let adapter =
             SlintWindowAdapter::new(self.wayland.clone(), output, &SkiaSharedContext::default());
@@ -108,7 +111,9 @@ impl Platform for WaylandPlatform {
                 }
 
                 let mut event_queue = self.wayland.event_queue.lock().unwrap();
-                event_queue.roundtrip(&mut ClientState).unwrap();
+                let mut client_state = self.wayland.client_state.lock().unwrap();
+
+                event_queue.roundtrip(&mut client_state).unwrap();
             })
             .map_err(|_| PlatformError::NoEventLoopProvider)
     }
@@ -134,11 +139,7 @@ impl SlintWindowAdapter {
 
         let display_handle = wayland.display_handle();
         let window_handle = wayland.window_handle(&output.id()).unwrap();
-        // FIXE(hack3rmann): hardcoded size
-        let size = wayland.output_size(&output).unwrap_or(PhysicalSize {
-            width: 2520,
-            height: 40,
-        });
+        let size = wayland.window_size(&output.id()).unwrap();
 
         renderer
             .set_window_handle(window_handle, display_handle, size, None)
@@ -159,10 +160,7 @@ impl WindowAdapter for SlintWindowAdapter {
     }
 
     fn size(&self) -> PhysicalSize {
-        // FIXME(hack3rmann): hardcoded size
-        self.wayland
-            .output_size(&self.output)
-            .unwrap_or(PhysicalSize::new(2520, 40))
+        self.wayland.window_size(&self.output.id()).unwrap()
     }
 
     fn renderer(&self) -> &dyn Renderer {

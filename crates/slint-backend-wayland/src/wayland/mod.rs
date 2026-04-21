@@ -5,45 +5,92 @@ use raw_window_handle::{
 use slint::PhysicalSize;
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData},
+    delegate_output,
+    delegate_registry,
     globals::GlobalData,
-    output::{OutputData, OutputState},
+    output::{OutputHandler, OutputState},
     reexports::{
         client::{
-            Connection, Dispatch, EventQueue, Proxy, QueueHandle, backend::ObjectId, globals::{GlobalListContents, registry_queue_init}, protocol::{
-                wl_compositor::WlCompositor, wl_output::WlOutput, wl_registry::WlRegistry,
+            Connection, Dispatch, EventQueue, Proxy, QueueHandle, backend::ObjectId, globals::registry_queue_init, protocol::{
+                wl_compositor::WlCompositor, wl_output::WlOutput,
                 wl_shm::WlShm, wl_surface::WlSurface,
             }
-        },
-        protocols::xdg::xdg_output::zv1::client::{
-            zxdg_output_manager_v1::ZxdgOutputManagerV1, zxdg_output_v1::ZxdgOutputV1,
         },
         protocols_wlr::layer_shell::v1::client::{
             zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::{Anchor, ZwlrLayerSurfaceV1},
         },
     },
-    registry::RegistryState,
-    shell::wlr_layer::{
-        Anchor as WlrAnchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface, LayerSurfaceConfigure, LayerSurfaceData
-    },
+    registry::{ProvidesRegistryState, RegistryState},
+    shell::{WaylandSurface, wlr_layer::{
+        Anchor as WlrAnchor,
+        KeyboardInteractivity,
+        Layer,
+        LayerShell,
+        LayerShellHandler,
+        LayerSurface,
+        LayerSurfaceConfigure,
+        LayerSurfaceData,
+    }},
     shm::{Shm, ShmHandler},
 };
-use std::{collections::HashMap, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
+use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
 use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event as LayerSurfaceEvent;
 
 pub type OutputId = ObjectId;
 
-pub struct ClientState;
+pub struct SurfaceState {
+    pub size: Option<PhysicalSize>,
+}
 
-impl Dispatch<WlRegistry, GlobalListContents> for ClientState {
-    fn event(
-        _: &mut Self,
-        _: &WlRegistry,
-        _: <WlRegistry as Proxy>::Event,
-        _: &GlobalListContents,
+pub struct ClientState {
+    pub output_state: OutputState,
+    pub registry_state: RegistryState,
+    pub surface_state: HashMap<ObjectId, SurfaceState>,
+}
+
+impl ClientState {
+    pub fn new(output_state: OutputState, registry_state: RegistryState) -> Self {
+        Self {
+            output_state,
+            registry_state,
+            surface_state: HashMap::new(),
+        }
+    }
+
+    pub fn set_surface_size(&mut self, wl_surface_id: ObjectId, size: PhysicalSize) {
+        match self.surface_state.entry(wl_surface_id) {
+            Entry::Occupied(mut entry) => entry.get_mut().size = Some(size),
+            Entry::Vacant(entry) => {
+                entry.insert(SurfaceState { size: Some(size) });
+            }
+        }
+    }
+
+    pub fn get_surface_size(&self, wl_surface_id: &ObjectId) -> Option<PhysicalSize> {
+        self.surface_state.get(wl_surface_id).and_then(|s| s.size)
+    }
+
+    pub fn remove_surface(&mut self, wl_surface_id: &ObjectId) {
+        self.surface_state.remove(wl_surface_id);
+    }
+}
+
+impl ProvidesRegistryState for ClientState {
+    fn registry(&mut self) -> &mut RegistryState {
+        &mut self.registry_state
+    }
+
+    fn runtime_add_global(
+        &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
+        _: u32,
+        _: &str,
+        _: u32,
     ) {
     }
+
+    fn runtime_remove_global(&mut self, _: &Connection, _: &QueueHandle<Self>, _: u32, _: &str) {}
 }
 
 impl Dispatch<WlCompositor, GlobalData> for ClientState {
@@ -96,41 +143,18 @@ impl LayerShellHandler for ClientState {
     }
 }
 
-impl Dispatch<WlOutput, OutputData> for ClientState {
-    fn event(
-        _: &mut Self,
-        _: &WlOutput,
-        _: <WlOutput as Proxy>::Event,
-        _: &OutputData,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
+impl OutputHandler for ClientState {
+    fn output_state(&mut self) -> &mut OutputState {
+        &mut self.output_state
     }
+
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
 }
 
-impl Dispatch<ZxdgOutputV1, OutputData> for ClientState {
-    fn event(
-        _: &mut Self,
-        _: &ZxdgOutputV1,
-        _: <ZxdgOutputV1 as Proxy>::Event,
-        _: &OutputData,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-impl Dispatch<ZxdgOutputManagerV1, GlobalData> for ClientState {
-    fn event(
-        _: &mut Self,
-        _: &ZxdgOutputManagerV1,
-        _: <ZxdgOutputManagerV1 as Proxy>::Event,
-        _: &GlobalData,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
+delegate_registry!(ClientState);
+delegate_output!(ClientState);
 
 impl Dispatch<WlSurface, SurfaceData> for ClientState {
     fn event(
@@ -146,13 +170,15 @@ impl Dispatch<WlSurface, SurfaceData> for ClientState {
 
 impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceData> for ClientState {
     fn event(
-        _: &mut Self,
+        state: &mut Self,
         surface: &ZwlrLayerSurfaceV1,
         event: <ZwlrLayerSurfaceV1 as Proxy>::Event,
-        _: &LayerSurfaceData,
+        data: &LayerSurfaceData,
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        let surface_id = data.layer_surface().unwrap().wl_surface().id();
+
         match event {
             LayerSurfaceEvent::Configure {
                 serial,
@@ -163,9 +189,11 @@ impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceData> for ClientState {
                 surface.set_exclusive_zone(40);
                 surface.set_anchor(Anchor::Top);
                 surface.ack_configure(serial);
+
+                state.set_surface_size(surface_id, PhysicalSize { width, height });
             }
-            LayerSurfaceEvent::Closed => todo!(),
-            _ => todo!(),
+            LayerSurfaceEvent::Closed => state.remove_surface(&surface_id),
+            _ => unimplemented!(),
         }
     }
 }
@@ -202,12 +230,11 @@ impl HasWindowHandle for SurfaceBundle {
 pub struct WaylandInner {
     pub connection: Connection,
     pub event_queue: Mutex<EventQueue<ClientState>>,
-    pub registry_state: RegistryState,
     pub compositor_state: CompositorState,
     pub shm_state: Shm,
     pub layer_shell: LayerShell,
-    pub output_state: OutputState,
     pub windows: HashMap<ObjectId, Arc<SurfaceBundle>>,
+    pub client_state: Mutex<ClientState>,
 }
 
 impl WaylandInner {
@@ -216,8 +243,6 @@ impl WaylandInner {
         let connection = Connection::connect_to_env().unwrap();
         let (globals, mut event_queue) = registry_queue_init::<ClientState>(&connection).unwrap();
         let qh = event_queue.handle();
-
-        let mut state = ClientState;
 
         let registry_state = RegistryState::new(&globals);
 
@@ -228,9 +253,14 @@ impl WaylandInner {
 
         let output_state = OutputState::new(&globals, &qh);
 
+        let mut client_state = ClientState::new(output_state, registry_state);
+
+        event_queue.roundtrip(&mut client_state).unwrap();
+
         // NOTE(hack3rmann): interior mutability does not affect the hash here
         #[allow(clippy::mutable_key_type)]
-        let windows = output_state
+        let windows = client_state
+            .output_state
             .outputs()
             .map(|output| {
                 let surface = compositor_state.create_surface::<ClientState>(&qh);
@@ -242,9 +272,17 @@ impl WaylandInner {
                     Some(&output),
                 );
 
+                let (output_width, _) = client_state
+                    .output_state
+                    .info(&output)
+                    .unwrap()
+                    .logical_size
+                    .unwrap();
+
                 layer_surface.set_exclusive_zone(0);
                 layer_surface.set_anchor(WlrAnchor::all());
                 layer_surface.set_margin(0, 0, 0, 0);
+                layer_surface.set_size(output_width as u32, 40);
                 layer_surface.set_keyboard_interactivity(KeyboardInteractivity::None);
 
                 surface.commit();
@@ -259,25 +297,39 @@ impl WaylandInner {
             })
             .collect();
 
-        event_queue.roundtrip(&mut state).unwrap();
+        event_queue.roundtrip(&mut client_state).unwrap();
 
         Self {
             connection,
             event_queue: Mutex::new(event_queue),
-            registry_state,
             compositor_state,
             shm_state,
             layer_shell,
-            output_state,
             windows,
+            client_state: Mutex::new(client_state),
         }
     }
 
     pub fn output_size(&self, output: &WlOutput) -> Option<PhysicalSize> {
-        self.output_state
+        let client_state = self.client_state.lock().unwrap();
+
+        client_state
+            .output_state
             .info(output)
-            .map(|i| i.physical_size)
-            .map(|(w, h)| PhysicalSize::new(u32::try_from(w).unwrap(), u32::try_from(h).unwrap()))
+            .and_then(|i| i.logical_size)
+            .and_then(|(w, h)| {
+                Some(PhysicalSize::new(
+                    u32::try_from(w).ok()?,
+                    u32::try_from(h).ok()?,
+                ))
+            })
+    }
+
+    pub fn window_size(&self, output_id: &ObjectId) -> Option<PhysicalSize> {
+        let surface_id = self.windows.get(output_id).map(|w| w.surface.id())?;
+        let client_state = self.client_state.lock().unwrap();
+
+        client_state.get_surface_size(&surface_id)
     }
 
     pub fn raw_display_handle(&self) -> WaylandDisplayHandle {
