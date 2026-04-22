@@ -1,6 +1,6 @@
 use crate::{
     channel::ChannelWrapper,
-    wayland::{ClientState, Wayland},
+    wayland::{ClientState, OutputEvent, SurfaceState, Wayland, WaylandEvent},
     window::SlintWindowAdapter,
 };
 use calloop::{
@@ -9,34 +9,146 @@ use calloop::{
 };
 use i_slint_renderer_skia::SkiaSharedContext;
 use slint::{
-    EventLoopError, PlatformError,
+    EventLoopError, PhysicalSize, PlatformError,
     platform::{EventLoopProxy, Platform, WindowAdapter},
 };
 use smithay_client_toolkit::reexports::{
-    calloop_wayland_source::WaylandSource, client::Proxy as _,
+    calloop_wayland_source::WaylandSource,
+    client::{
+        Proxy as _,
+        backend::ObjectId,
+        protocol::{wl_output::WlOutput, wl_surface::WlSurface},
+    },
 };
 use std::{
+    cell::Cell,
+    collections::{HashMap, hash_map::Entry},
     rc::Rc,
-    sync::{LazyLock, Mutex},
+    sync::{Arc, LazyLock, Mutex, RwLock},
     time::Duration,
 };
+
+#[derive(Default)]
+pub struct PlatformSharedState {
+    pub surface_states: RwLock<HashMap<ObjectId, SurfaceState>>,
+    pub pending_outputs: RwLock<Vec<WlOutput>>,
+}
+
+impl PlatformSharedState {
+    pub fn window_size(&self, surface_id: &ObjectId) -> Option<PhysicalSize> {
+        let state = self.surface_states.read().unwrap();
+        state.get(surface_id).and_then(|s| s.size)
+    }
+}
 
 #[derive(Default)]
 pub struct WaylandPlatform {
     wayland: LazyLock<Wayland>,
     slint_event_channel: ChannelWrapper<SlintEvent>,
     adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
+    shared_state: Arc<PlatformSharedState>,
+    is_event_loop_initialized: Cell<bool>,
+}
+
+impl WaylandPlatform {
+    pub fn get_output_surface_id(&self, output_id: &ObjectId) -> Option<ObjectId> {
+        self.get_output_surface(output_id).map(|s| s.id())
+    }
+
+    pub fn get_output_surface(&self, output_id: &ObjectId) -> Option<&WlSurface> {
+        self.wayland.windows.get(output_id).map(|w| &w.surface)
+    }
+
+    pub fn window_size(&self, output_id: &ObjectId) -> Option<PhysicalSize> {
+        let surface_id = self.get_output_surface_id(output_id)?;
+        self.shared_state.window_size(&surface_id)
+    }
+
+    pub fn handle_wayland_event(&self, event: WaylandEvent) {
+        match event {
+            WaylandEvent::Window { event, surface_id } => {
+                let adapters = self.adapters.lock().unwrap();
+                let current_adapters = adapters.iter().filter(|adapter| {
+                    let Some(id) = self.get_output_surface_id(&adapter.output.id()) else {
+                        return false;
+                    };
+
+                    id == surface_id
+                });
+
+                for adapter in current_adapters {
+                    adapter.window().dispatch_event(event.clone());
+                }
+            }
+            WaylandEvent::Output(OutputEvent::Added(output)) => {
+                let mut outputs = self.shared_state.pending_outputs.write().unwrap();
+                outputs.push(output);
+            }
+            WaylandEvent::Output(OutputEvent::Removed(output)) => {
+                let mut outputs = self.shared_state.pending_outputs.write().unwrap();
+
+                let Some(index) = outputs
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, o)| (o.id() == output.id()).then_some(i))
+                else {
+                    return;
+                };
+
+                outputs.swap_remove(index);
+            }
+            WaylandEvent::SurfaceResized { surface_id, state } => {
+                let mut states = self.shared_state.surface_states.write().unwrap();
+
+                match states.entry(surface_id) {
+                    Entry::Occupied(mut entry) => {
+                        *entry.get_mut() = state;
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(state);
+                    }
+                }
+            }
+            WaylandEvent::SurfaceRemoved { surface_id } => {
+                let mut states = self.shared_state.surface_states.write().unwrap();
+                states.remove(&surface_id);
+            }
+        }
+    }
 }
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
+        if !self.is_event_loop_initialized.get() {
+            let state = self.wayland.client_state.lock().unwrap();
+            let state = state
+                .as_ref()
+                .expect("client state should not be taken before event loop initialization");
+
+            let receiver = state.event_channel.receiver();
+            let receiver = receiver.as_ref().expect(
+                "wayland event receiver should not be taken before event loop initialization",
+            );
+
+            while let Ok(event) = receiver.try_recv() {
+                self.handle_wayland_event(event);
+            }
+        }
+
         let output = {
-            let mut outputs = self.wayland.pending_outputs.write().unwrap();
+            let mut outputs = self.shared_state.pending_outputs.write().unwrap();
             outputs.pop().expect("no outputs left")
         };
 
-        let adapter =
-            SlintWindowAdapter::new(self.wayland.clone(), output, &SkiaSharedContext::default());
+        let surface = self.get_output_surface(&output.id()).unwrap().clone();
+
+        let adapter = SlintWindowAdapter::new(
+            Arc::clone(&self.shared_state),
+            self.wayland.clone(),
+            surface,
+            output,
+            &SkiaSharedContext::default(),
+        );
 
         {
             let mut adapters = self.adapters.lock().unwrap();
@@ -74,17 +186,6 @@ impl Platform for WaylandPlatform {
 
         handle
             .insert_source(wayland_source, |(), queue, state| {
-                {
-                    let mut surface_state = self.wayland.surface_state.write().unwrap();
-                    surface_state.clone_from(&state.surface_state);
-                }
-
-                {
-                    // FIXME(hack3rmann): sync pending_outputs in a correct way
-                    let mut outputs = self.wayland.pending_outputs.write().unwrap();
-                    outputs.clone_from(&state.pending_outputs);
-                }
-
                 queue.dispatch_pending(state)
             })
             .unwrap();
@@ -102,27 +203,13 @@ impl Platform for WaylandPlatform {
             .unwrap();
 
         handle
-            .insert_source(window_receiver, |event, (), _| {
-                let ChannelEvent::Msg((event, surface_id)) = event else {
-                    return;
-                };
-
-                let adapters = self.adapters.lock().unwrap();
-
-                for adapter in adapters.iter() {
-                    let Some(id) = adapter.wayland.get_output_surface_id(&adapter.output.id())
-                    else {
-                        continue;
-                    };
-
-                    if id != surface_id {
-                        continue;
-                    }
-
-                    adapter.window().dispatch_event(event.clone());
-                }
+            .insert_source(window_receiver, |event, (), _| match event {
+                ChannelEvent::Msg(event) => self.handle_wayland_event(event),
+                ChannelEvent::Closed => {}
             })
             .unwrap();
+
+        self.is_event_loop_initialized.set(true);
 
         let mut client_state = {
             let mut client_state = self.wayland.client_state.lock().unwrap();
@@ -144,7 +231,7 @@ impl Platform for WaylandPlatform {
 
     fn new_event_loop_proxy(&self) -> Option<Box<dyn EventLoopProxy>> {
         Some(Box::new(EventLoopHandle::new(
-            self.slint_event_channel.sender.clone(),
+            self.slint_event_channel.sender(),
         )))
     }
 }

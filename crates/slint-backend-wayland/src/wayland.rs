@@ -25,9 +25,31 @@ use smithay_client_toolkit::{
         LayerSurfaceData,
     }}, shm::{Shm, ShmHandler}
 };
-use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex, RwLock}};
+use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
 use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event as LayerSurfaceEvent;
 use crate::ChannelWrapper;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OutputEvent {
+    Added(WlOutput),
+    Removed(WlOutput),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WaylandEvent {
+    Window {
+        event: WindowEvent,
+        surface_id: ObjectId,
+    },
+    Output(OutputEvent),
+    SurfaceResized {
+        surface_id: ObjectId,
+        state: SurfaceState,
+    },
+    SurfaceRemoved {
+        surface_id: ObjectId,
+    },
+}
 
 pub type OutputId = ObjectId;
 
@@ -41,9 +63,8 @@ pub struct ClientState {
     pub registry_state: RegistryState,
     pub seat_state: SeatState,
     pub surface_state: HashMap<ObjectId, SurfaceState>,
-    pub pending_outputs: Vec<WlOutput>,
     pub pointer: Option<WlPointer>,
-    pub event_channel: ChannelWrapper<(WindowEvent, ObjectId)>,
+    pub event_channel: ChannelWrapper<WaylandEvent>,
     pub exit_signal: Option<LoopSignal>,
 }
 
@@ -57,16 +78,22 @@ impl ClientState {
             output_state,
             registry_state,
             seat_state,
-            surface_state: HashMap::new(),
-            pending_outputs: Vec::new(),
             pointer: None,
             event_channel: ChannelWrapper::default(),
             exit_signal: None,
+            surface_state: HashMap::new(),
         }
     }
 
-    pub fn set_surface_size(&mut self, wl_surface_id: ObjectId, size: PhysicalSize) {
-        match self.surface_state.entry(wl_surface_id) {
+    pub fn set_surface_size(&mut self, surface_id: ObjectId, size: PhysicalSize) {
+        self.event_channel
+            .send(WaylandEvent::SurfaceResized {
+                surface_id: surface_id.clone(),
+                state: SurfaceState { size: Some(size) },
+            })
+            .unwrap();
+
+        match self.surface_state.entry(surface_id) {
             Entry::Occupied(mut entry) => entry.get_mut().size = Some(size),
             Entry::Vacant(entry) => {
                 entry.insert(SurfaceState { size: Some(size) });
@@ -74,12 +101,18 @@ impl ClientState {
         }
     }
 
-    pub fn get_surface_size(&self, wl_surface_id: &ObjectId) -> Option<PhysicalSize> {
-        self.surface_state.get(wl_surface_id).and_then(|s| s.size)
+    pub fn get_surface_size(&self, surface_id: &ObjectId) -> Option<PhysicalSize> {
+        self.surface_state.get(surface_id).and_then(|s| s.size)
     }
 
-    pub fn remove_surface(&mut self, wl_surface_id: &ObjectId) {
-        self.surface_state.remove(wl_surface_id);
+    pub fn remove_surface(&mut self, surface_id: &ObjectId) {
+        self.event_channel
+            .send(WaylandEvent::SurfaceRemoved {
+                surface_id: surface_id.clone(),
+            })
+            .unwrap();
+
+        self.surface_state.remove(surface_id);
     }
 }
 
@@ -157,7 +190,9 @@ impl OutputHandler for ClientState {
     }
 
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
-        self.pending_outputs.push(output);
+        self.event_channel
+            .send(WaylandEvent::Output(OutputEvent::Added(output)))
+            .unwrap();
 
         slint::invoke_from_event_loop(crate::start_window::show).unwrap();
     }
@@ -165,16 +200,9 @@ impl OutputHandler for ClientState {
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
 
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
-        let Some(index) = self
-            .pending_outputs
-            .iter()
-            .enumerate()
-            .find_map(|(i, o)| (o.id() == output.id()).then_some(i))
-        else {
-            return;
-        };
-
-        self.pending_outputs.swap_remove(index);
+        self.event_channel
+            .send(WaylandEvent::Output(OutputEvent::Removed(output)))
+            .unwrap();
     }
 }
 
@@ -329,8 +357,10 @@ impl PointerHandler for ClientState {
             };
 
             self.event_channel
-                .sender
-                .send((event, surface.id()))
+                .send(WaylandEvent::Window {
+                    event,
+                    surface_id: surface.id(),
+                })
                 .unwrap();
         }
     }
@@ -369,10 +399,9 @@ pub struct WaylandInner {
     pub shm_state: Shm,
     pub layer_shell: LayerShell,
     pub windows: HashMap<ObjectId, Arc<SurfaceBundle>>,
-    // TODO(hack3rmann): make it RwLock for the channel
+    // TODO(hack3rmann): move the state out of this
     pub client_state: Mutex<Option<ClientState>>,
-    pub surface_state: RwLock<HashMap<ObjectId, SurfaceState>>,
-    pub pending_outputs: RwLock<Vec<WlOutput>>,
+    pub startup_outputs: Mutex<Vec<WlOutput>>,
 }
 
 impl WaylandInner {
@@ -434,6 +463,8 @@ impl WaylandInner {
             })
             .collect();
 
+        let outputs = client_state.output_state.outputs().collect();
+
         event_queue.roundtrip(&mut client_state).unwrap();
 
         Self {
@@ -443,21 +474,9 @@ impl WaylandInner {
             shm_state,
             layer_shell,
             windows,
-            surface_state: RwLock::new(client_state.surface_state.clone()),
-            pending_outputs: RwLock::new(client_state.pending_outputs.clone()),
             client_state: Mutex::new(Some(client_state)),
+            startup_outputs: Mutex::new(outputs),
         }
-    }
-
-    pub fn get_output_surface_id(&self, output_id: &ObjectId) -> Option<ObjectId> {
-        self.windows.get(output_id).map(|w| w.surface.id())
-    }
-
-    pub fn window_size(&self, output_id: &ObjectId) -> Option<PhysicalSize> {
-        let surface_id = self.get_output_surface_id(output_id)?;
-        let state = self.surface_state.read().unwrap();
-
-        state.get(&surface_id).and_then(|s| s.size)
     }
 
     pub fn raw_display_handle(&self) -> WaylandDisplayHandle {
