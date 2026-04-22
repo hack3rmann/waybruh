@@ -1,3 +1,4 @@
+use calloop::LoopSignal;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
     RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
@@ -24,12 +25,13 @@ use smithay_client_toolkit::{
         LayerSurfaceData,
     }}, shm::{Shm, ShmHandler}
 };
-use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
+use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex, RwLock}};
 use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event as LayerSurfaceEvent;
 use crate::ChannelWrapper;
 
 pub type OutputId = ObjectId;
 
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SurfaceState {
     pub size: Option<PhysicalSize>,
 }
@@ -42,6 +44,7 @@ pub struct ClientState {
     pub pending_outputs: Vec<WlOutput>,
     pub pointer: Option<WlPointer>,
     pub event_channel: ChannelWrapper<(WindowEvent, ObjectId)>,
+    pub exit_signal: Option<LoopSignal>,
 }
 
 impl ClientState {
@@ -58,6 +61,7 @@ impl ClientState {
             pending_outputs: Vec::new(),
             pointer: None,
             event_channel: ChannelWrapper::default(),
+            exit_signal: None,
         }
     }
 
@@ -360,13 +364,15 @@ impl HasWindowHandle for SurfaceBundle {
 
 pub struct WaylandInner {
     pub connection: Connection,
-    pub event_queue: Mutex<EventQueue<ClientState>>,
+    pub event_queue: Mutex<Option<EventQueue<ClientState>>>,
     pub compositor_state: CompositorState,
     pub shm_state: Shm,
     pub layer_shell: LayerShell,
     pub windows: HashMap<ObjectId, Arc<SurfaceBundle>>,
     // TODO(hack3rmann): make it RwLock for the channel
-    pub client_state: Mutex<ClientState>,
+    pub client_state: Mutex<Option<ClientState>>,
+    pub surface_state: RwLock<HashMap<ObjectId, SurfaceState>>,
+    pub pending_outputs: RwLock<Vec<WlOutput>>,
 }
 
 impl WaylandInner {
@@ -432,28 +438,15 @@ impl WaylandInner {
 
         Self {
             connection,
-            event_queue: Mutex::new(event_queue),
+            event_queue: Mutex::new(Some(event_queue)),
             compositor_state,
             shm_state,
             layer_shell,
             windows,
-            client_state: Mutex::new(client_state),
+            surface_state: RwLock::new(client_state.surface_state.clone()),
+            pending_outputs: RwLock::new(client_state.pending_outputs.clone()),
+            client_state: Mutex::new(Some(client_state)),
         }
-    }
-
-    pub fn output_size(&self, output: &WlOutput) -> Option<PhysicalSize> {
-        let client_state = self.client_state.lock().unwrap();
-
-        client_state
-            .output_state
-            .info(output)
-            .and_then(|i| i.logical_size)
-            .and_then(|(w, h)| {
-                Some(PhysicalSize::new(
-                    u32::try_from(w).ok()?,
-                    u32::try_from(h).ok()?,
-                ))
-            })
     }
 
     pub fn get_output_surface_id(&self, output_id: &ObjectId) -> Option<ObjectId> {
@@ -462,9 +455,9 @@ impl WaylandInner {
 
     pub fn window_size(&self, output_id: &ObjectId) -> Option<PhysicalSize> {
         let surface_id = self.get_output_surface_id(output_id)?;
-        let client_state = self.client_state.lock().unwrap();
+        let state = self.surface_state.read().unwrap();
 
-        client_state.get_surface_size(&surface_id)
+        state.get(&surface_id).and_then(|s| s.size)
     }
 
     pub fn raw_display_handle(&self) -> WaylandDisplayHandle {

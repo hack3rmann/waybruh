@@ -3,10 +3,10 @@ pub mod wayland;
 
 use crate::{
     event_loop::{Event, EventLoopHandle, Quit},
-    wayland::Wayland,
+    wayland::{ClientState, Wayland},
 };
 use calloop::{
-    EventLoop, LoopSignal,
+    EventLoop,
     channel::{Channel, Event as ChannelEvent, Sender},
 };
 use i_slint_renderer_skia::{SkiaRenderer, SkiaSharedContext};
@@ -14,7 +14,10 @@ use slint::{
     PhysicalSize, PlatformError, Window,
     platform::{EventLoopProxy, Platform, Renderer, SetPlatformError, WindowAdapter},
 };
-use smithay_client_toolkit::reexports::client::{Proxy as _, protocol::wl_output::WlOutput};
+use smithay_client_toolkit::reexports::{
+    calloop_wayland_source::WaylandSource,
+    client::{Proxy as _, protocol::wl_output::WlOutput},
+};
 use std::{
     rc::{Rc, Weak},
     sync::{LazyLock, Mutex},
@@ -80,8 +83,8 @@ pub struct WaylandPlatform {
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
         let output = {
-            let mut state = self.wayland.client_state.lock().unwrap();
-            state.pending_outputs.pop().expect("no outputs left")
+            let mut outputs = self.wayland.pending_outputs.write().unwrap();
+            outputs.pop().expect("no outputs left")
         };
 
         let adapter =
@@ -96,7 +99,7 @@ impl Platform for WaylandPlatform {
     }
 
     fn run_event_loop(&self) -> Result<(), PlatformError> {
-        let mut event_loop = EventLoop::<LoopSignal>::try_new().unwrap();
+        let mut event_loop = EventLoop::<ClientState>::try_new().unwrap();
         let handle = event_loop.handle();
 
         let event_receiver = self
@@ -111,6 +114,7 @@ impl Platform for WaylandPlatform {
 
         let window_receiver = {
             let state = self.wayland.client_state.lock().unwrap();
+            let state = state.as_ref().unwrap();
 
             state
                 .event_channel
@@ -118,19 +122,47 @@ impl Platform for WaylandPlatform {
                 .expect("wayland event receiver should not be taken")
         };
 
+        let event_queue = {
+            let mut lock = self.wayland.event_queue.lock().unwrap();
+            lock.take().expect("event should not be taken")
+        };
+
+        let wayland_source = WaylandSource::new(self.wayland.connection.clone(), event_queue);
+
         handle
-            .insert_source(event_receiver, |event, _, _| match event {
+            .insert_source(wayland_source, |(), queue, state| {
+                {
+                    let mut surface_state = self.wayland.surface_state.write().unwrap();
+                    surface_state.clone_from(&state.surface_state);
+                }
+
+                {
+                    // FIXME(hack3rmann): sync pending_outputs in a correct way
+                    let mut outputs = self.wayland.pending_outputs.write().unwrap();
+                    outputs.clone_from(&state.pending_outputs);
+                }
+
+                queue.dispatch_pending(state)
+            })
+            .unwrap();
+
+        handle
+            .insert_source(event_receiver, |event, (), _| match event {
                 ChannelEvent::Msg(callback) => callback(),
                 ChannelEvent::Closed => {}
             })
             .unwrap();
 
         handle
-            .insert_source(quit_receiver, |_, _, signal| signal.stop())
+            .insert_source(quit_receiver, |_, _, client_state| {
+                if let Some(signal) = &client_state.exit_signal {
+                    signal.stop();
+                }
+            })
             .unwrap();
 
         handle
-            .insert_source(window_receiver, |event, _, _| {
+            .insert_source(window_receiver, |event, (), _| {
                 let ChannelEvent::Msg((event, surface_id)) = event else {
                     return;
                 };
@@ -152,10 +184,13 @@ impl Platform for WaylandPlatform {
             })
             .unwrap();
 
-        let mut shared_data = event_loop.get_signal();
+        let mut client_state = {
+            let mut client_state = self.wayland.client_state.lock().unwrap();
+            client_state.take().unwrap()
+        };
 
         event_loop
-            .run(Duration::from_millis(20), &mut shared_data, |_| {
+            .run(Duration::from_millis(1000), &mut client_state, |_| {
                 slint::platform::update_timers_and_animations();
 
                 let adapters = self.adapters.lock().unwrap();
@@ -163,11 +198,6 @@ impl Platform for WaylandPlatform {
                 for adapter in adapters.iter() {
                     adapter.renderer.render().unwrap();
                 }
-
-                let mut event_queue = self.wayland.event_queue.lock().unwrap();
-                let mut client_state = self.wayland.client_state.lock().unwrap();
-
-                event_queue.roundtrip(&mut client_state).unwrap();
             })
             .map_err(|_| PlatformError::NoEventLoopProvider)
     }
