@@ -10,6 +10,6 @@ repository.workspace = true
 [dependencies]
 slint-backend-wayland.workspace = true
 slint.workspace = true
-slint-interpreter = "1.16.0"
+slint-interpreter = { version = "1.16.0", features = ["display-diagnostics"] }
 tokio = { version = "1.52.1", features = ["full"] }
 clap = { version = "4.6.1", features = ["derive"] }

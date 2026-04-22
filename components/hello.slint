@@ -1,6 +1,20 @@
+import { Button } from "std-widgets.slint";
+
 export component BruhBar inherits Window {
-    Text {
-        text: "hello world";
-        color: green;
+    width: 100px;
+    height: 100px;
+
+    HorizontalLayout {
+        Text {
+            text: "hello world";
+            color: black;
+            font-size: 24pt;
+        }
+
+        Button {
+            clicked => {
+                debug("Hello, World!");
+            }
+        }
     }
 }

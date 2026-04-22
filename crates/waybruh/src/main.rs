@@ -20,7 +20,11 @@ async fn main() {
     let result = compiler.build_from_path(&args.path).await;
 
     let Some(definition) = result.component("BruhBar") else {
-        panic!("failed to find BruhBar in {}", args.path.display());
+        result.print_diagnostics();
+        panic!(
+            "failed to find BruhBar component in {}",
+            args.path.display(),
+        );
     };
 
     let instance = definition.create().unwrap();
