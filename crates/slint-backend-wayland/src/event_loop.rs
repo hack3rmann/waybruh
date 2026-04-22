@@ -24,8 +24,7 @@ use std::{
 #[derive(Default)]
 pub struct WaylandPlatform {
     wayland: LazyLock<Wayland>,
-    event_channel: ChannelWrapper<Event>,
-    quit_channel: ChannelWrapper<Quit>,
+    slint_event_channel: ChannelWrapper<SlintEvent>,
     adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
 }
 
@@ -52,14 +51,9 @@ impl Platform for WaylandPlatform {
         let handle = event_loop.handle();
 
         let event_receiver = self
-            .event_channel
+            .slint_event_channel
             .take_receiver()
             .expect("event receiver should not be taken");
-
-        let quit_receiver = self
-            .quit_channel
-            .take_receiver()
-            .expect("quit receiver should not be taken");
 
         let window_receiver = {
             let state = self.wayland.client_state.lock().unwrap();
@@ -96,17 +90,14 @@ impl Platform for WaylandPlatform {
             .unwrap();
 
         handle
-            .insert_source(event_receiver, |event, (), _| match event {
-                ChannelEvent::Msg(callback) => callback(),
-                ChannelEvent::Closed => {}
-            })
-            .unwrap();
-
-        handle
-            .insert_source(quit_receiver, |_, _, client_state| {
-                if let Some(signal) = &client_state.exit_signal {
-                    signal.stop();
+            .insert_source(event_receiver, |event, (), state| match event {
+                ChannelEvent::Msg(SlintEvent::Fn(callback)) => callback(),
+                ChannelEvent::Msg(SlintEvent::Quit) => {
+                    if let Some(signal) = &state.exit_signal {
+                        signal.stop();
+                    }
                 }
+                ChannelEvent::Closed => {}
             })
             .unwrap();
 
@@ -153,40 +144,39 @@ impl Platform for WaylandPlatform {
 
     fn new_event_loop_proxy(&self) -> Option<Box<dyn EventLoopProxy>> {
         Some(Box::new(EventLoopHandle::new(
-            self.event_channel.sender.clone(),
-            self.quit_channel.sender.clone(),
+            self.slint_event_channel.sender.clone(),
         )))
     }
 }
 
-pub type Event = Box<dyn FnOnce() + Send>;
+pub type SlintFnEvent = Box<dyn FnOnce() + Send>;
 
-pub struct Quit;
+pub enum SlintEvent {
+    Fn(SlintFnEvent),
+    Quit,
+}
 
+#[derive(Clone)]
 pub struct EventLoopHandle {
-    event_sender: Sender<Event>,
-    quit_sender: Sender<Quit>,
+    sender: Sender<SlintEvent>,
 }
 
 impl EventLoopHandle {
-    pub fn new(event_sender: Sender<Event>, quit_sender: Sender<Quit>) -> Self {
-        Self {
-            event_sender,
-            quit_sender,
-        }
+    pub const fn new(sender: Sender<SlintEvent>) -> Self {
+        Self { sender }
     }
 }
 
 impl EventLoopProxy for EventLoopHandle {
     fn quit_event_loop(&self) -> Result<(), EventLoopError> {
-        self.quit_sender
-            .send(Quit)
+        self.sender
+            .send(SlintEvent::Quit)
             .map_err(|_| EventLoopError::NoEventLoopProvider)
     }
 
-    fn invoke_from_event_loop(&self, event: Event) -> Result<(), EventLoopError> {
-        self.event_sender
-            .send(event)
+    fn invoke_from_event_loop(&self, event: SlintFnEvent) -> Result<(), EventLoopError> {
+        self.sender
+            .send(SlintEvent::Fn(event))
             .map_err(|_| EventLoopError::NoEventLoopProvider)
     }
 }
