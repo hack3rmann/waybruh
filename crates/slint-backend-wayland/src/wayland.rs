@@ -233,17 +233,17 @@ impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceData> for ClientState {
         let surface_id = data.layer_surface().unwrap().wl_surface().id();
 
         match event {
+            // FIXME(hack3rmann): hardcoded height
             LayerSurfaceEvent::Configure {
                 serial,
                 width,
-                height,
+                height: _,
             } => {
-                surface.set_size(width, height);
                 surface.set_exclusive_zone(40);
                 surface.set_anchor(Anchor::Top);
                 surface.ack_configure(serial);
 
-                state.set_surface_size(surface_id, PhysicalSize { width, height });
+                state.set_surface_size(surface_id, PhysicalSize { width, height: 40 });
             }
             LayerSurfaceEvent::Closed => state.remove_surface(&surface_id),
             _ => unimplemented!(),
