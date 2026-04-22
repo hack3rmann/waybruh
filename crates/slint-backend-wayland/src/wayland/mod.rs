@@ -4,24 +4,16 @@ use raw_window_handle::{
 };
 use slint::PhysicalSize;
 use smithay_client_toolkit::{
-    compositor::{CompositorState, SurfaceData},
-    delegate_output,
-    delegate_registry,
-    globals::GlobalData,
-    output::{OutputHandler, OutputState},
-    reexports::{
+    compositor::{CompositorState, SurfaceData}, delegate_output, delegate_pointer, delegate_registry, delegate_seat, globals::GlobalData, output::{OutputHandler, OutputState}, reexports::{
         client::{
             Connection, Dispatch, EventQueue, Proxy, QueueHandle, backend::ObjectId, globals::registry_queue_init, protocol::{
-                wl_compositor::WlCompositor, wl_output::WlOutput,
-                wl_shm::WlShm, wl_surface::WlSurface,
+                wl_compositor::WlCompositor, wl_output::WlOutput, wl_pointer::WlPointer, wl_seat::WlSeat, wl_shm::WlShm, wl_surface::WlSurface
             }
         },
         protocols_wlr::layer_shell::v1::client::{
             zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::{Anchor, ZwlrLayerSurfaceV1},
         },
-    },
-    registry::{ProvidesRegistryState, RegistryState},
-    shell::{WaylandSurface, wlr_layer::{
+    }, registry::{ProvidesRegistryState, RegistryState}, seat::{Capability, SeatHandler, SeatState, pointer::{PointerEvent, PointerHandler}}, shell::{WaylandSurface, wlr_layer::{
         Anchor as WlrAnchor,
         KeyboardInteractivity,
         Layer,
@@ -30,8 +22,7 @@ use smithay_client_toolkit::{
         LayerSurface,
         LayerSurfaceConfigure,
         LayerSurfaceData,
-    }},
-    shm::{Shm, ShmHandler},
+    }}, shm::{Shm, ShmHandler}
 };
 use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
 use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event as LayerSurfaceEvent;
@@ -45,17 +36,25 @@ pub struct SurfaceState {
 pub struct ClientState {
     pub output_state: OutputState,
     pub registry_state: RegistryState,
+    pub seat_state: SeatState,
     pub surface_state: HashMap<ObjectId, SurfaceState>,
     pub pending_outputs: Vec<WlOutput>,
+    pub pointer: Option<WlPointer>,
 }
 
 impl ClientState {
-    pub fn new(output_state: OutputState, registry_state: RegistryState) -> Self {
+    pub fn new(
+        output_state: OutputState,
+        registry_state: RegistryState,
+        seat_state: SeatState,
+    ) -> Self {
         Self {
             output_state,
             registry_state,
+            seat_state,
             surface_state: HashMap::new(),
             pending_outputs: Vec::new(),
+            pointer: None,
         }
     }
 
@@ -223,6 +222,55 @@ impl ShmHandler for ClientState {
     }
 }
 
+impl SeatHandler for ClientState {
+    fn seat_state(&mut self) -> &mut SeatState {
+        &mut self.seat_state
+    }
+
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
+
+    fn new_capability(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        seat: WlSeat,
+        cap: Capability,
+    ) {
+        let Capability::Pointer = cap else { return };
+
+        self.pointer = self.seat_state.get_pointer(qh, &seat).ok();
+    }
+
+    fn remove_capability(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: WlSeat,
+        cap: Capability,
+    ) {
+        if let Capability::Pointer = cap {
+            self.pointer = None;
+        }
+    }
+
+    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
+}
+
+impl PointerHandler for ClientState {
+    fn pointer_frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &WlPointer,
+        events: &[PointerEvent],
+    ) {
+        dbg!(events);
+    }
+}
+
+delegate_seat!(ClientState);
+delegate_pointer!(ClientState);
+
 pub struct SurfaceBundle {
     pub surface: WlSurface,
     pub layer_surface: LayerSurface,
@@ -265,14 +313,13 @@ impl WaylandInner {
 
         let registry_state = RegistryState::new(&globals);
 
+        let layer_shell = LayerShell::bind(&globals, &qh).unwrap();
         let compositor_state = CompositorState::bind(&globals, &qh).unwrap();
         let shm_state = Shm::bind(&globals, &qh).unwrap();
-
-        let layer_shell = LayerShell::bind(&globals, &qh).unwrap();
-
         let output_state = OutputState::new(&globals, &qh);
+        let seat_state = SeatState::new(&globals, &qh);
 
-        let mut client_state = ClientState::new(output_state, registry_state);
+        let mut client_state = ClientState::new(output_state, registry_state, seat_state);
 
         event_queue.roundtrip(&mut client_state).unwrap();
 
