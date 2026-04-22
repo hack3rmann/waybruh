@@ -1,27 +1,20 @@
+use calloop::LoopSignal;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
     RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
 };
-use slint::PhysicalSize;
+use slint::{LogicalPosition, PhysicalSize, platform::{PointerEventButton, WindowEvent}};
 use smithay_client_toolkit::{
-    compositor::{CompositorState, SurfaceData},
-    delegate_output,
-    delegate_registry,
-    globals::GlobalData,
-    output::{OutputHandler, OutputState},
-    reexports::{
+    compositor::{CompositorState, SurfaceData}, delegate_output, delegate_pointer, delegate_registry, delegate_seat, globals::GlobalData, output::{OutputHandler, OutputState}, reexports::{
         client::{
             Connection, Dispatch, EventQueue, Proxy, QueueHandle, backend::ObjectId, globals::registry_queue_init, protocol::{
-                wl_compositor::WlCompositor, wl_output::WlOutput,
-                wl_shm::WlShm, wl_surface::WlSurface,
+                wl_compositor::WlCompositor, wl_output::WlOutput, wl_pointer::WlPointer, wl_seat::WlSeat, wl_shm::WlShm, wl_surface::WlSurface
             }
         },
         protocols_wlr::layer_shell::v1::client::{
             zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::{Anchor, ZwlrLayerSurfaceV1},
         },
-    },
-    registry::{ProvidesRegistryState, RegistryState},
-    shell::{WaylandSurface, wlr_layer::{
+    }, registry::{ProvidesRegistryState, RegistryState}, seat::{Capability, SeatHandler, SeatState, pointer::{PointerEvent, PointerEventKind, PointerHandler}}, shell::{WaylandSurface, wlr_layer::{
         Anchor as WlrAnchor,
         KeyboardInteractivity,
         Layer,
@@ -30,14 +23,37 @@ use smithay_client_toolkit::{
         LayerSurface,
         LayerSurfaceConfigure,
         LayerSurfaceData,
-    }},
-    shm::{Shm, ShmHandler},
+    }}, shm::{Shm, ShmHandler}
 };
 use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
 use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event as LayerSurfaceEvent;
+use crate::ChannelWrapper;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OutputEvent {
+    Added(WlOutput),
+    Removed(WlOutput),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum WaylandEvent {
+    Window {
+        event: WindowEvent,
+        surface_id: ObjectId,
+    },
+    Output(OutputEvent),
+    SurfaceResized {
+        surface_id: ObjectId,
+        state: SurfaceState,
+    },
+    SurfaceRemoved {
+        surface_id: ObjectId,
+    },
+}
 
 pub type OutputId = ObjectId;
 
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct SurfaceState {
     pub size: Option<PhysicalSize>,
 }
@@ -45,22 +61,39 @@ pub struct SurfaceState {
 pub struct ClientState {
     pub output_state: OutputState,
     pub registry_state: RegistryState,
+    pub seat_state: SeatState,
     pub surface_state: HashMap<ObjectId, SurfaceState>,
-    pub pending_outputs: Vec<WlOutput>,
+    pub pointer: Option<WlPointer>,
+    pub event_channel: ChannelWrapper<WaylandEvent>,
+    pub exit_signal: Option<LoopSignal>,
 }
 
 impl ClientState {
-    pub fn new(output_state: OutputState, registry_state: RegistryState) -> Self {
+    pub fn new(
+        output_state: OutputState,
+        registry_state: RegistryState,
+        seat_state: SeatState,
+    ) -> Self {
         Self {
             output_state,
             registry_state,
+            seat_state,
+            pointer: None,
+            event_channel: ChannelWrapper::default(),
+            exit_signal: None,
             surface_state: HashMap::new(),
-            pending_outputs: Vec::new(),
         }
     }
 
-    pub fn set_surface_size(&mut self, wl_surface_id: ObjectId, size: PhysicalSize) {
-        match self.surface_state.entry(wl_surface_id) {
+    pub fn set_surface_size(&mut self, surface_id: ObjectId, size: PhysicalSize) {
+        self.event_channel
+            .send(WaylandEvent::SurfaceResized {
+                surface_id: surface_id.clone(),
+                state: SurfaceState { size: Some(size) },
+            })
+            .unwrap();
+
+        match self.surface_state.entry(surface_id) {
             Entry::Occupied(mut entry) => entry.get_mut().size = Some(size),
             Entry::Vacant(entry) => {
                 entry.insert(SurfaceState { size: Some(size) });
@@ -68,12 +101,18 @@ impl ClientState {
         }
     }
 
-    pub fn get_surface_size(&self, wl_surface_id: &ObjectId) -> Option<PhysicalSize> {
-        self.surface_state.get(wl_surface_id).and_then(|s| s.size)
+    pub fn get_surface_size(&self, surface_id: &ObjectId) -> Option<PhysicalSize> {
+        self.surface_state.get(surface_id).and_then(|s| s.size)
     }
 
-    pub fn remove_surface(&mut self, wl_surface_id: &ObjectId) {
-        self.surface_state.remove(wl_surface_id);
+    pub fn remove_surface(&mut self, surface_id: &ObjectId) {
+        self.event_channel
+            .send(WaylandEvent::SurfaceRemoved {
+                surface_id: surface_id.clone(),
+            })
+            .unwrap();
+
+        self.surface_state.remove(surface_id);
     }
 }
 
@@ -151,7 +190,9 @@ impl OutputHandler for ClientState {
     }
 
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
-        self.pending_outputs.push(output);
+        self.event_channel
+            .send(WaylandEvent::Output(OutputEvent::Added(output)))
+            .unwrap();
 
         slint::invoke_from_event_loop(crate::start_window::show).unwrap();
     }
@@ -159,16 +200,9 @@ impl OutputHandler for ClientState {
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
 
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
-        let Some(index) = self
-            .pending_outputs
-            .iter()
-            .enumerate()
-            .find_map(|(i, o)| (o.id() == output.id()).then_some(i))
-        else {
-            return;
-        };
-
-        self.pending_outputs.swap_remove(index);
+        self.event_channel
+            .send(WaylandEvent::Output(OutputEvent::Removed(output)))
+            .unwrap();
     }
 }
 
@@ -199,17 +233,17 @@ impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceData> for ClientState {
         let surface_id = data.layer_surface().unwrap().wl_surface().id();
 
         match event {
+            // FIXME(hack3rmann): hardcoded height
             LayerSurfaceEvent::Configure {
                 serial,
                 width,
-                height,
+                height: _,
             } => {
-                surface.set_size(width, height);
                 surface.set_exclusive_zone(40);
                 surface.set_anchor(Anchor::Top);
                 surface.ack_configure(serial);
 
-                state.set_surface_size(surface_id, PhysicalSize { width, height });
+                state.set_surface_size(surface_id, PhysicalSize { width, height: 40 });
             }
             LayerSurfaceEvent::Closed => state.remove_surface(&surface_id),
             _ => unimplemented!(),
@@ -222,6 +256,118 @@ impl ShmHandler for ClientState {
         todo!()
     }
 }
+
+impl SeatHandler for ClientState {
+    fn seat_state(&mut self) -> &mut SeatState {
+        &mut self.seat_state
+    }
+
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
+
+    fn new_capability(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        seat: WlSeat,
+        cap: Capability,
+    ) {
+        let Capability::Pointer = cap else { return };
+
+        self.pointer = self.seat_state.get_pointer(qh, &seat).ok();
+    }
+
+    fn remove_capability(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: WlSeat,
+        cap: Capability,
+    ) {
+        if let Capability::Pointer = cap {
+            self.pointer = None;
+        }
+    }
+
+    fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
+}
+
+fn button_wayland_to_slint(button: u32) -> PointerEventButton {
+    use smithay_client_toolkit::seat::pointer::{
+        BTN_BACK, BTN_FORWARD, BTN_LEFT, BTN_MIDDLE, BTN_RIGHT,
+    };
+
+    match button {
+        BTN_LEFT => PointerEventButton::Left,
+        BTN_RIGHT => PointerEventButton::Right,
+        BTN_MIDDLE => PointerEventButton::Middle,
+        BTN_FORWARD => PointerEventButton::Forward,
+        BTN_BACK => PointerEventButton::Back,
+        _ => PointerEventButton::Other,
+    }
+}
+
+impl PointerHandler for ClientState {
+    fn pointer_frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &WlPointer,
+        events: &[PointerEvent],
+    ) {
+        for PointerEvent {
+            surface,
+            position: (x, y),
+            kind,
+        } in events
+        {
+            let position = LogicalPosition::new(*x as f32, *y as f32);
+
+            let event = match kind {
+                // NOTE(hack3rmann): Enter does not have a matching WindowEvent on Slint's side
+                PointerEventKind::Enter { serial: _ } => continue,
+                PointerEventKind::Leave { serial: _ } => WindowEvent::PointerExited,
+                PointerEventKind::Motion { time: _ } => WindowEvent::PointerMoved { position },
+                PointerEventKind::Press {
+                    time: _,
+                    button,
+                    serial: _,
+                } => WindowEvent::PointerPressed {
+                    position,
+                    button: button_wayland_to_slint(*button),
+                },
+                PointerEventKind::Release {
+                    time: _,
+                    button,
+                    serial: _,
+                } => WindowEvent::PointerReleased {
+                    position,
+                    button: button_wayland_to_slint(*button),
+                },
+                // TODO(hack3rmann): handle finger scrolls better
+                PointerEventKind::Axis {
+                    time: _,
+                    horizontal,
+                    vertical,
+                    source: _,
+                } => WindowEvent::PointerScrolled {
+                    position,
+                    delta_x: horizontal.absolute as f32,
+                    delta_y: vertical.absolute as f32,
+                },
+            };
+
+            self.event_channel
+                .send(WaylandEvent::Window {
+                    event,
+                    surface_id: surface.id(),
+                })
+                .unwrap();
+        }
+    }
+}
+
+delegate_seat!(ClientState);
+delegate_pointer!(ClientState);
 
 pub struct SurfaceBundle {
     pub surface: WlSurface,
@@ -248,12 +394,14 @@ impl HasWindowHandle for SurfaceBundle {
 
 pub struct WaylandInner {
     pub connection: Connection,
-    pub event_queue: Mutex<EventQueue<ClientState>>,
+    pub event_queue: Mutex<Option<EventQueue<ClientState>>>,
     pub compositor_state: CompositorState,
     pub shm_state: Shm,
     pub layer_shell: LayerShell,
     pub windows: HashMap<ObjectId, Arc<SurfaceBundle>>,
-    pub client_state: Mutex<ClientState>,
+    // TODO(hack3rmann): move the state out of this
+    pub client_state: Mutex<Option<ClientState>>,
+    pub startup_outputs: Mutex<Vec<WlOutput>>,
 }
 
 impl WaylandInner {
@@ -265,14 +413,13 @@ impl WaylandInner {
 
         let registry_state = RegistryState::new(&globals);
 
+        let layer_shell = LayerShell::bind(&globals, &qh).unwrap();
         let compositor_state = CompositorState::bind(&globals, &qh).unwrap();
         let shm_state = Shm::bind(&globals, &qh).unwrap();
-
-        let layer_shell = LayerShell::bind(&globals, &qh).unwrap();
-
         let output_state = OutputState::new(&globals, &qh);
+        let seat_state = SeatState::new(&globals, &qh);
 
-        let mut client_state = ClientState::new(output_state, registry_state);
+        let mut client_state = ClientState::new(output_state, registry_state, seat_state);
 
         event_queue.roundtrip(&mut client_state).unwrap();
 
@@ -316,39 +463,20 @@ impl WaylandInner {
             })
             .collect();
 
+        let outputs = client_state.output_state.outputs().collect();
+
         event_queue.roundtrip(&mut client_state).unwrap();
 
         Self {
             connection,
-            event_queue: Mutex::new(event_queue),
+            event_queue: Mutex::new(Some(event_queue)),
             compositor_state,
             shm_state,
             layer_shell,
             windows,
-            client_state: Mutex::new(client_state),
+            client_state: Mutex::new(Some(client_state)),
+            startup_outputs: Mutex::new(outputs),
         }
-    }
-
-    pub fn output_size(&self, output: &WlOutput) -> Option<PhysicalSize> {
-        let client_state = self.client_state.lock().unwrap();
-
-        client_state
-            .output_state
-            .info(output)
-            .and_then(|i| i.logical_size)
-            .and_then(|(w, h)| {
-                Some(PhysicalSize::new(
-                    u32::try_from(w).ok()?,
-                    u32::try_from(h).ok()?,
-                ))
-            })
-    }
-
-    pub fn window_size(&self, output_id: &ObjectId) -> Option<PhysicalSize> {
-        let surface_id = self.windows.get(output_id).map(|w| w.surface.id())?;
-        let client_state = self.client_state.lock().unwrap();
-
-        client_state.get_surface_size(&surface_id)
     }
 
     pub fn raw_display_handle(&self) -> WaylandDisplayHandle {
