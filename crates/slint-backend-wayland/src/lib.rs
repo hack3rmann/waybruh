@@ -109,6 +109,15 @@ impl Platform for WaylandPlatform {
             .take_receiver()
             .expect("quit receiver should not be taken");
 
+        let window_receiver = {
+            let state = self.wayland.client_state.lock().unwrap();
+
+            state
+                .event_channel
+                .take_receiver()
+                .expect("wayland event receiver should not be taken")
+        };
+
         handle
             .insert_source(event_receiver, |event, _, _| match event {
                 ChannelEvent::Msg(callback) => callback(),
@@ -120,10 +129,33 @@ impl Platform for WaylandPlatform {
             .insert_source(quit_receiver, |_, _, signal| signal.stop())
             .unwrap();
 
+        handle
+            .insert_source(window_receiver, |event, _, _| {
+                let ChannelEvent::Msg((event, surface_id)) = event else {
+                    return;
+                };
+
+                let adapters = self.adapters.lock().unwrap();
+
+                for adapter in adapters.iter() {
+                    let Some(id) = adapter.wayland.get_output_surface_id(&adapter.output.id())
+                    else {
+                        continue;
+                    };
+
+                    if id != surface_id {
+                        continue;
+                    }
+
+                    adapter.window().dispatch_event(event.clone());
+                }
+            })
+            .unwrap();
+
         let mut shared_data = event_loop.get_signal();
 
         event_loop
-            .run(Duration::from_millis(200), &mut shared_data, |_| {
+            .run(Duration::from_millis(20), &mut shared_data, |_| {
                 slint::platform::update_timers_and_animations();
 
                 let adapters = self.adapters.lock().unwrap();

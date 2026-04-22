@@ -2,7 +2,7 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
     RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
 };
-use slint::PhysicalSize;
+use slint::{LogicalPosition, PhysicalSize, platform::{PointerEventButton, WindowEvent}};
 use smithay_client_toolkit::{
     compositor::{CompositorState, SurfaceData}, delegate_output, delegate_pointer, delegate_registry, delegate_seat, globals::GlobalData, output::{OutputHandler, OutputState}, reexports::{
         client::{
@@ -13,7 +13,7 @@ use smithay_client_toolkit::{
         protocols_wlr::layer_shell::v1::client::{
             zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::{Anchor, ZwlrLayerSurfaceV1},
         },
-    }, registry::{ProvidesRegistryState, RegistryState}, seat::{Capability, SeatHandler, SeatState, pointer::{PointerEvent, PointerHandler}}, shell::{WaylandSurface, wlr_layer::{
+    }, registry::{ProvidesRegistryState, RegistryState}, seat::{Capability, SeatHandler, SeatState, pointer::{PointerEvent, PointerEventKind, PointerHandler}}, shell::{WaylandSurface, wlr_layer::{
         Anchor as WlrAnchor,
         KeyboardInteractivity,
         Layer,
@@ -26,6 +26,7 @@ use smithay_client_toolkit::{
 };
 use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
 use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event as LayerSurfaceEvent;
+use crate::ChannelWrapper;
 
 pub type OutputId = ObjectId;
 
@@ -40,6 +41,7 @@ pub struct ClientState {
     pub surface_state: HashMap<ObjectId, SurfaceState>,
     pub pending_outputs: Vec<WlOutput>,
     pub pointer: Option<WlPointer>,
+    pub event_channel: ChannelWrapper<(WindowEvent, ObjectId)>,
 }
 
 impl ClientState {
@@ -55,6 +57,7 @@ impl ClientState {
             surface_state: HashMap::new(),
             pending_outputs: Vec::new(),
             pointer: None,
+            event_channel: ChannelWrapper::default(),
         }
     }
 
@@ -256,6 +259,21 @@ impl SeatHandler for ClientState {
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlSeat) {}
 }
 
+fn button_wayland_to_slint(button: u32) -> PointerEventButton {
+    use smithay_client_toolkit::seat::pointer::{
+        BTN_BACK, BTN_FORWARD, BTN_LEFT, BTN_MIDDLE, BTN_RIGHT,
+    };
+
+    match button {
+        BTN_LEFT => PointerEventButton::Left,
+        BTN_RIGHT => PointerEventButton::Right,
+        BTN_MIDDLE => PointerEventButton::Middle,
+        BTN_FORWARD => PointerEventButton::Forward,
+        BTN_BACK => PointerEventButton::Back,
+        _ => PointerEventButton::Other,
+    }
+}
+
 impl PointerHandler for ClientState {
     fn pointer_frame(
         &mut self,
@@ -264,7 +282,53 @@ impl PointerHandler for ClientState {
         _: &WlPointer,
         events: &[PointerEvent],
     ) {
-        dbg!(events);
+        for PointerEvent {
+            surface,
+            position: (x, y),
+            kind,
+        } in events
+        {
+            let position = LogicalPosition::new(*x as f32, *y as f32);
+
+            let event = match kind {
+                // NOTE(hack3rmann): Enter does not have a matching WindowEvent on Slint's side
+                PointerEventKind::Enter { serial: _ } => continue,
+                PointerEventKind::Leave { serial: _ } => WindowEvent::PointerExited,
+                PointerEventKind::Motion { time: _ } => WindowEvent::PointerMoved { position },
+                PointerEventKind::Press {
+                    time: _,
+                    button,
+                    serial: _,
+                } => WindowEvent::PointerPressed {
+                    position,
+                    button: button_wayland_to_slint(*button),
+                },
+                PointerEventKind::Release {
+                    time: _,
+                    button,
+                    serial: _,
+                } => WindowEvent::PointerReleased {
+                    position,
+                    button: button_wayland_to_slint(*button),
+                },
+                // TODO(hack3rmann): handle finger scrolls better
+                PointerEventKind::Axis {
+                    time: _,
+                    horizontal,
+                    vertical,
+                    source: _,
+                } => WindowEvent::PointerScrolled {
+                    position,
+                    delta_x: horizontal.absolute as f32,
+                    delta_y: vertical.absolute as f32,
+                },
+            };
+
+            self.event_channel
+                .sender
+                .send((event, surface.id()))
+                .unwrap();
+        }
     }
 }
 
@@ -301,6 +365,7 @@ pub struct WaylandInner {
     pub shm_state: Shm,
     pub layer_shell: LayerShell,
     pub windows: HashMap<ObjectId, Arc<SurfaceBundle>>,
+    // TODO(hack3rmann): make it RwLock for the channel
     pub client_state: Mutex<ClientState>,
 }
 
@@ -391,8 +456,12 @@ impl WaylandInner {
             })
     }
 
+    pub fn get_output_surface_id(&self, output_id: &ObjectId) -> Option<ObjectId> {
+        self.windows.get(output_id).map(|w| w.surface.id())
+    }
+
     pub fn window_size(&self, output_id: &ObjectId) -> Option<PhysicalSize> {
-        let surface_id = self.windows.get(output_id).map(|w| w.surface.id())?;
+        let surface_id = self.get_output_surface_id(output_id)?;
         let client_state = self.client_state.lock().unwrap();
 
         client_state.get_surface_size(&surface_id)
