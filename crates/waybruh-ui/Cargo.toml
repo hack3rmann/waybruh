@@ -11,3 +11,4 @@ repository.workspace = true
 slint-interpreter.workspace = true
 thiserror.workspace = true
 waybruh-ui-macros.workspace = true
+slint.workspace = true

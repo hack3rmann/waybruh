@@ -1,5 +1,5 @@
 import { Button } from "std-widgets.slint";
-import { Shell } from "waybruh/globals.slint";
+import { Command } from "waybruh/globals.slint";
 
 export component BruhBar inherits Window {
     width: 100px;
@@ -16,7 +16,7 @@ export component BruhBar inherits Window {
 
         Button {
             clicked => {
-                root.text = Shell.execute("echo $HOME").stdout;
+                root.text = Command.execute(["head", "-c", "8", "/dev/random"]).stdout;
             }
         }
     }
