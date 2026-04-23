@@ -1,52 +1,31 @@
 use clap::Parser;
-use slint::SharedString;
 use slint_backend_wayland::start_window;
-use slint_interpreter::{Compiler, ComponentHandle, Value};
-use std::{
-    path::PathBuf,
-    process::{Command, Stdio},
-};
+use slint_interpreter::{Compiler, ComponentHandle, ComponentInstance};
+use std::{env, path::PathBuf};
 use tokio::fs;
 
-pub struct Shell;
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    slint_backend_wayland::init().unwrap();
 
-impl Shell {
-    pub fn execute(params: &[Value]) -> Value {
-        let [param] = params else {
-            panic!("expected a single param");
-        };
+    let waybruh_ui_path = env::var_os("WAYBRUH_UI_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let mut working_dir = env::current_dir().unwrap();
+            working_dir.push("crates/waybruh-ui/ui");
+            working_dir
+        });
 
-        let Value::String(param) = param else {
-            panic!("value_type expected to be string");
-        };
+    let mut compiler = Compiler::default();
+    compiler.set_include_paths(vec![waybruh_ui_path]);
 
-        let child = match Command::new("sh")
-            .args(["-c", param])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-        {
-            Ok(child) => child,
-            Err(err) => {
-                // TODO(hack3rmann): use tracing instead
-                eprintln!("failed to run child process: {err}");
-                return Value::String(SharedString::new());
-            }
-        };
+    let args = Args::parse();
 
-        let output = match child.wait_with_output() {
-            Ok(output) => output,
-            Err(err) => {
-                // TODO(hack3rmann): use tracing instead
-                eprintln!("failed to run wait for output: {err}");
-                return Value::String(SharedString::new());
-            }
-        };
+    let instance = prepare_main_component(&compiler, args.path, &args.entry).await;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
+    start_window::set(move || instance.show().unwrap());
 
-        Value::String(SharedString::from(stdout.as_ref()))
-    }
+    slint::run_event_loop().unwrap();
 }
 
 #[derive(Parser, Debug)]
@@ -54,46 +33,31 @@ impl Shell {
 struct Args {
     /// Path to `.slint` file containing BruhBar component that must inherit from Window
     path: PathBuf,
+
+    /// Entry component
+    #[arg(short, long, default_value_t = String::from("BruhBar"))]
+    entry: String,
 }
 
-fn add_reexports(source: &mut String) {
-    // TODO(hack3rmann): do re-exports with a proc macro
-    source.push_str("\nexport { Shell } from \"waybruh-globals.slint\";");
-}
+async fn prepare_main_component(
+    compiler: &Compiler,
+    path: PathBuf,
+    entry: &str,
+) -> ComponentInstance {
+    let mut source_code = fs::read_to_string(&path).await.unwrap();
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    slint_backend_wayland::init().unwrap();
+    source_code.push_str(waybruh_ui::RE_EXPORTS);
 
-    let args = Args::parse();
+    let result = compiler.build_from_source(source_code, path.clone()).await;
 
-    let compiler = Compiler::default();
-
-    let mut source_code = fs::read_to_string(&args.path).await.unwrap();
-
-    add_reexports(&mut source_code);
-
-    let result = compiler
-        .build_from_source(source_code, args.path.clone())
-        .await;
-
-    let Some(definition) = result.component("BruhBar") else {
+    let Some(definition) = result.component(entry) else {
         result.print_diagnostics();
-        panic!(
-            "failed to find BruhBar component in {}",
-            args.path.display(),
-        );
+        panic!("failed to find BruhBar component in {}", path.display(),);
     };
 
     let instance = definition.create().unwrap();
 
+    waybruh_ui::populate_instance(&instance).unwrap();
+
     instance
-        .set_global_callback("Shell", "execute", Shell::execute)
-        .unwrap();
-
-    start_window::set(move || {
-        instance.show().unwrap();
-    });
-
-    slint::run_event_loop().unwrap();
 }

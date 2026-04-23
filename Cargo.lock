@@ -5066,6 +5066,15 @@ dependencies = [
  "slint-backend-wayland",
  "slint-interpreter",
  "tokio",
+ "waybruh-ui",
+]
+
+[[package]]
+name = "waybruh-ui"
+version = "0.1.0"
+dependencies = [
+ "slint-interpreter",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/slint-backend-wayland",
+    "crates/waybruh-ui",
     "crates/waybruh",
 ]
 
@@ -18,5 +19,8 @@ repository = "https://www.github.com/hack3rmann/waybruh"
 
 [workspace.dependencies]
 slint-backend-wayland = { path = "crates/slint-backend-wayland" }
+waybruh-ui = { path = "crates/waybruh-ui" }
 slint = { version = "1.15.1", default-features = false, features = ["compat-1-2"] }
 i-slint-renderer-skia = { version = "1.15.1", default-features = false, features = ["unstable-wgpu-28"] }
+slint-interpreter = { version = "1.16.0", features = ["display-diagnostics"] }
+thiserror = "2.0.18"
