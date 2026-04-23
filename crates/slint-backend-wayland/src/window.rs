@@ -1,4 +1,8 @@
-use crate::{event_loop::PlatformSharedState, wayland::Wayland};
+use crate::{
+    event_loop::{PlatformSharedState, SlintEvent},
+    wayland::Wayland,
+};
+use calloop::channel::Sender;
 use i_slint_renderer_skia::{SkiaRenderer, SkiaSharedContext};
 use slint::{
     PhysicalSize, Window,
@@ -20,6 +24,7 @@ pub struct SlintWindowAdapter {
     pub output: WlOutput,
     pub surface: WlSurface,
     pub state: Arc<PlatformSharedState>,
+    pub sender: Sender<SlintEvent>,
 }
 
 impl SlintWindowAdapter {
@@ -28,6 +33,7 @@ impl SlintWindowAdapter {
         wayland: Wayland,
         surface: WlSurface,
         output: WlOutput,
+        sender: Sender<SlintEvent>,
         skia_context: &SkiaSharedContext,
     ) -> Rc<Self> {
         let renderer = SkiaRenderer::default_wgpu_28(skia_context);
@@ -47,6 +53,7 @@ impl SlintWindowAdapter {
             wayland,
             output,
             surface,
+            sender,
         })
     }
 }
@@ -62,5 +69,13 @@ impl WindowAdapter for SlintWindowAdapter {
 
     fn renderer(&self) -> &dyn Renderer {
         &self.renderer
+    }
+
+    fn request_redraw(&self) {
+        self.sender
+            .send(SlintEvent::RedrawRequested {
+                surface_id: self.surface.id(),
+            })
+            .unwrap();
     }
 }

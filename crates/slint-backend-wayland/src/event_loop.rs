@@ -22,7 +22,8 @@ use smithay_client_toolkit::reexports::{
 };
 use std::{
     cell::Cell,
-    collections::{HashMap, hash_map::Entry},
+    collections::{HashMap, HashSet, hash_map::Entry},
+    fmt::{self, Debug},
     rc::Rc,
     sync::{Arc, LazyLock, Mutex, RwLock},
     time::Duration,
@@ -48,6 +49,7 @@ pub struct WaylandPlatform {
     adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
     shared_state: Arc<PlatformSharedState>,
     is_event_loop_initialized: Cell<bool>,
+    pending_rendering: Mutex<HashSet<ObjectId>>,
 }
 
 impl WaylandPlatform {
@@ -147,6 +149,7 @@ impl Platform for WaylandPlatform {
             self.wayland.clone(),
             surface,
             output,
+            self.slint_event_channel.sender(),
             &SkiaSharedContext::default(),
         );
 
@@ -198,6 +201,10 @@ impl Platform for WaylandPlatform {
                         signal.stop();
                     }
                 }
+                ChannelEvent::Msg(SlintEvent::RedrawRequested { surface_id }) => {
+                    let mut pending = self.pending_rendering.lock().unwrap();
+                    pending.insert(surface_id);
+                }
                 ChannelEvent::Closed => {}
             })
             .unwrap();
@@ -216,15 +223,28 @@ impl Platform for WaylandPlatform {
             client_state.take().unwrap()
         };
 
+        const TIMEOUT: Duration = Duration::from_millis(10_000);
+
         event_loop
-            .run(Duration::from_millis(1000), &mut client_state, |_| {
+            .run(TIMEOUT, &mut client_state, |_| {
                 slint::platform::update_timers_and_animations();
+
+                let mut pending = self.pending_rendering.lock().unwrap();
+
+                if pending.is_empty() {
+                    return;
+                }
 
                 let adapters = self.adapters.lock().unwrap();
 
-                for adapter in adapters.iter() {
+                for adapter in adapters
+                    .iter()
+                    .filter(|a| pending.contains(&a.surface.id()))
+                {
                     adapter.renderer.render().unwrap();
                 }
+
+                pending.clear();
             })
             .map_err(|_| PlatformError::NoEventLoopProvider)
     }
@@ -241,6 +261,20 @@ pub type SlintFnEvent = Box<dyn FnOnce() + Send>;
 pub enum SlintEvent {
     Fn(SlintFnEvent),
     Quit,
+    RedrawRequested { surface_id: ObjectId },
+}
+
+impl Debug for SlintEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SlintEvent::Fn(_) => f.write_str("SlintEvent::Fn(..)"),
+            SlintEvent::Quit => f.write_str("SlintEvent::Quit"),
+            SlintEvent::RedrawRequested { surface_id } => write!(
+                f,
+                "SlintEvent::RedrawRequested {{ surface_id: {surface_id:?} }}"
+            ),
+        }
+    }
 }
 
 #[derive(Clone)]

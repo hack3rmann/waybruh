@@ -1,33 +1,49 @@
+use crate::ChannelWrapper;
 use calloop::LoopSignal;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
     RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
 };
-use slint::{LogicalPosition, PhysicalSize, platform::{PointerEventButton, WindowEvent}};
-use smithay_client_toolkit::{
-    compositor::{CompositorState, SurfaceData}, delegate_output, delegate_pointer, delegate_registry, delegate_seat, globals::GlobalData, output::{OutputHandler, OutputState}, reexports::{
-        client::{
-            Connection, Dispatch, EventQueue, Proxy, QueueHandle, backend::ObjectId, globals::registry_queue_init, protocol::{
-                wl_compositor::WlCompositor, wl_output::WlOutput, wl_pointer::WlPointer, wl_seat::WlSeat, wl_shm::WlShm, wl_surface::WlSurface
-            }
-        },
-        protocols_wlr::layer_shell::v1::client::{
-            zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::{Anchor, ZwlrLayerSurfaceV1},
-        },
-    }, registry::{ProvidesRegistryState, RegistryState}, seat::{Capability, SeatHandler, SeatState, pointer::{PointerEvent, PointerEventKind, PointerHandler}}, shell::{WaylandSurface, wlr_layer::{
-        Anchor as WlrAnchor,
-        KeyboardInteractivity,
-        Layer,
-        LayerShell,
-        LayerShellHandler,
-        LayerSurface,
-        LayerSurfaceConfigure,
-        LayerSurfaceData,
-    }}, shm::{Shm, ShmHandler}
+use slint::{
+    LogicalPosition, PhysicalSize,
+    platform::{PointerEventButton, WindowEvent},
 };
-use std::{collections::{HashMap, hash_map::Entry}, ops::Deref, ptr::NonNull, sync::{Arc, Mutex}};
-use smithay_client_toolkit::reexports::protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event as LayerSurfaceEvent;
-use crate::ChannelWrapper;
+use smithay_client_toolkit::{
+    compositor::CompositorHandler, delegate_compositor, delegate_shm,
+    reexports::client::protocol::wl_output::Transform, shell::wlr_layer::Anchor,
+};
+use smithay_client_toolkit::{
+    compositor::CompositorState,
+    delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat,
+    output::{OutputHandler, OutputState},
+    reexports::client::{
+        Connection, EventQueue, Proxy, QueueHandle,
+        backend::ObjectId,
+        globals::registry_queue_init,
+        protocol::{
+            wl_output::WlOutput, wl_pointer::WlPointer, wl_seat::WlSeat, wl_surface::WlSurface,
+        },
+    },
+    registry::{ProvidesRegistryState, RegistryState},
+    seat::{
+        Capability, SeatHandler, SeatState,
+        pointer::{PointerEvent, PointerEventKind, PointerHandler},
+    },
+    shell::{
+        WaylandSurface,
+        wlr_layer::{
+            Anchor as WlrAnchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler,
+            LayerSurface, LayerSurfaceConfigure,
+        },
+    },
+    shm::{Shm, ShmHandler},
+};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    ops::Deref,
+    ptr::NonNull,
+    sync::{Arc, Mutex},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutputEvent {
@@ -62,6 +78,7 @@ pub struct ClientState {
     pub output_state: OutputState,
     pub registry_state: RegistryState,
     pub seat_state: SeatState,
+    pub shm: Shm,
     pub surface_state: HashMap<ObjectId, SurfaceState>,
     pub pointer: Option<WlPointer>,
     pub event_channel: ChannelWrapper<WaylandEvent>,
@@ -73,11 +90,13 @@ impl ClientState {
         output_state: OutputState,
         registry_state: RegistryState,
         seat_state: SeatState,
+        shm: Shm,
     ) -> Self {
         Self {
             output_state,
             registry_state,
             seat_state,
+            shm,
             pointer: None,
             event_channel: ChannelWrapper::default(),
             exit_signal: None,
@@ -134,55 +153,79 @@ impl ProvidesRegistryState for ClientState {
     fn runtime_remove_global(&mut self, _: &Connection, _: &QueueHandle<Self>, _: u32, _: &str) {}
 }
 
-impl Dispatch<WlCompositor, GlobalData> for ClientState {
-    fn event(
-        _: &mut Self,
-        _: &WlCompositor,
-        _: <WlCompositor as Proxy>::Event,
-        _: &GlobalData,
+impl CompositorHandler for ClientState {
+    fn scale_factor_changed(
+        &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
+        surface: &WlSurface,
+        new_factor: i32,
+    ) {
+        surface.set_buffer_scale(new_factor);
+        surface.commit();
+    }
+
+    fn transform_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        surface: &WlSurface,
+        new_transform: Transform,
+    ) {
+        surface.set_buffer_transform(new_transform);
+        surface.commit();
+    }
+
+    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlSurface, _: u32) {}
+
+    fn surface_enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &WlSurface,
+        _: &WlOutput,
+    ) {
+    }
+
+    fn surface_leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &WlSurface,
+        _: &WlOutput,
     ) {
     }
 }
 
-impl Dispatch<WlShm, GlobalData> for ClientState {
-    fn event(
-        _: &mut Self,
-        _: &WlShm,
-        _: <WlShm as Proxy>::Event,
-        _: &GlobalData,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-impl Dispatch<ZwlrLayerShellV1, GlobalData> for ClientState {
-    fn event(
-        _: &mut Self,
-        _: &ZwlrLayerShellV1,
-        _: <ZwlrLayerShellV1 as Proxy>::Event,
-        _: &GlobalData,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
+delegate_compositor!(ClientState);
 
 impl LayerShellHandler for ClientState {
-    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {}
+    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer_surface: &LayerSurface) {
+        let surface_id = layer_surface.wl_surface().id();
+        self.remove_surface(&surface_id);
+    }
 
     fn configure(
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &LayerSurface,
-        _: LayerSurfaceConfigure,
+        layer_surface: &LayerSurface,
+        LayerSurfaceConfigure {
+            new_size: (width, _),
+            ..
+        }: LayerSurfaceConfigure,
         _: u32,
     ) {
+        let surface_id = layer_surface.wl_surface().id();
+
+        layer_surface.set_exclusive_zone(40);
+        layer_surface.set_anchor(Anchor::TOP);
+
+        self.set_surface_size(surface_id, PhysicalSize { width, height: 40 });
     }
 }
+
+delegate_layer!(ClientState);
 
 impl OutputHandler for ClientState {
     fn output_state(&mut self) -> &mut OutputState {
@@ -209,53 +252,13 @@ impl OutputHandler for ClientState {
 delegate_registry!(ClientState);
 delegate_output!(ClientState);
 
-impl Dispatch<WlSurface, SurfaceData> for ClientState {
-    fn event(
-        _: &mut Self,
-        _: &WlSurface,
-        _: <WlSurface as Proxy>::Event,
-        _: &SurfaceData,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-    }
-}
-
-impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceData> for ClientState {
-    fn event(
-        state: &mut Self,
-        surface: &ZwlrLayerSurfaceV1,
-        event: <ZwlrLayerSurfaceV1 as Proxy>::Event,
-        data: &LayerSurfaceData,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        let surface_id = data.layer_surface().unwrap().wl_surface().id();
-
-        match event {
-            // FIXME(hack3rmann): hardcoded height
-            LayerSurfaceEvent::Configure {
-                serial,
-                width,
-                height: _,
-            } => {
-                surface.set_exclusive_zone(40);
-                surface.set_anchor(Anchor::Top);
-                surface.ack_configure(serial);
-
-                state.set_surface_size(surface_id, PhysicalSize { width, height: 40 });
-            }
-            LayerSurfaceEvent::Closed => state.remove_surface(&surface_id),
-            _ => unimplemented!(),
-        }
-    }
-}
-
 impl ShmHandler for ClientState {
     fn shm_state(&mut self) -> &mut Shm {
-        todo!()
+        &mut self.shm
     }
 }
+
+delegate_shm!(ClientState);
 
 impl SeatHandler for ClientState {
     fn seat_state(&mut self) -> &mut SeatState {
@@ -396,7 +399,6 @@ pub struct WaylandInner {
     pub connection: Connection,
     pub event_queue: Mutex<Option<EventQueue<ClientState>>>,
     pub compositor_state: CompositorState,
-    pub shm_state: Shm,
     pub layer_shell: LayerShell,
     pub windows: HashMap<ObjectId, Arc<SurfaceBundle>>,
     // TODO(hack3rmann): move the state out of this
@@ -415,11 +417,11 @@ impl WaylandInner {
 
         let layer_shell = LayerShell::bind(&globals, &qh).unwrap();
         let compositor_state = CompositorState::bind(&globals, &qh).unwrap();
-        let shm_state = Shm::bind(&globals, &qh).unwrap();
+        let shm = Shm::bind(&globals, &qh).unwrap();
         let output_state = OutputState::new(&globals, &qh);
         let seat_state = SeatState::new(&globals, &qh);
 
-        let mut client_state = ClientState::new(output_state, registry_state, seat_state);
+        let mut client_state = ClientState::new(output_state, registry_state, seat_state, shm);
 
         event_queue.roundtrip(&mut client_state).unwrap();
 
@@ -471,7 +473,6 @@ impl WaylandInner {
             connection,
             event_queue: Mutex::new(Some(event_queue)),
             compositor_state,
-            shm_state,
             layer_shell,
             windows,
             client_state: Mutex::new(Some(client_state)),
