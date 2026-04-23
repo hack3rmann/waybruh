@@ -7,7 +7,7 @@ pub mod instance_ext;
 pub mod shell;
 
 pub const RE_EXPORTS: &str = r#"
-export { Shell } from "waybruh-globals.slint";
+export { Shell } from "waybruh/globals.slint";
 "#;
 
 pub fn populate_instance(instance: &ComponentInstance) -> Result<(), InitError> {

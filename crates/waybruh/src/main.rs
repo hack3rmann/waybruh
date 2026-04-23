@@ -1,24 +1,14 @@
 use clap::Parser;
 use slint_backend_wayland::start_window;
 use slint_interpreter::{Compiler, ComponentHandle, ComponentInstance};
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     slint_backend_wayland::init().unwrap();
 
-    let waybruh_ui_path = env::var_os("WAYBRUH_UI_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let mut working_dir = env::current_dir().unwrap();
-            working_dir.push("crates/waybruh-ui/ui");
-            working_dir
-        });
-
-    let mut compiler = Compiler::default();
-    compiler.set_include_paths(vec![waybruh_ui_path]);
-
+    let compiler = Compiler::default();
     let args = Args::parse();
 
     let instance = prepare_main_component(&compiler, args.path, &args.entry).await;
