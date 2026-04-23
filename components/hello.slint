@@ -1,23 +1,14 @@
 import { Button } from "std-widgets.slint";
 import { Command } from "waybruh/globals.slint";
+import { Battery } from "battery.slint";
 
 export component BruhBar inherits Window {
-    width: 100px;
-    height: 100px;
+    default-font-size: 16px;
 
-    property <string> text: "hello, world";
-
-    HorizontalLayout {
-        Text {
-            text: root.text;
-            color: black;
-            font-size: 24pt;
-        }
-
-        Button {
-            clicked => {
-                root.text = Command.execute(["head", "-c", "8", "/dev/random"]).stdout;
-            }
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            Battery { }
         }
     }
 }

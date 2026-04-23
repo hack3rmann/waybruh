@@ -1,0 +1,25 @@
+import { Button } from "std-widgets.slint";
+import { Command, String } from "waybruh/globals.slint";
+
+export component Battery {
+    HorizontalLayout {
+        alignment: center;
+
+        timer := Timer {
+            interval: 1s;
+            running: true;
+            triggered => {
+                let capacity = String.trim(Command.execute(["cat", "/sys/class/power_supply/BAT0/capacity"]).stdout);
+                let icon_idx = floor(capacity.to-float() / 25);
+
+                let icons = [" ", " ", " ", " ", " "];
+
+                text.text = "\{icons[icon_idx]} \{capacity}%";
+            }
+        }
+
+        text := Text {
+            text: "test";
+        }
+    }
+}

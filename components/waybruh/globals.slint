@@ -11,3 +11,9 @@ export global Shell {
 export global Command {
     callback execute([string]) -> ProgramOutput;
 }
+
+export global String {
+    pure callback trim(string) -> string;
+    pure callback trim-start(string) -> string;
+    pure callback trim-end(string) -> string;
+}

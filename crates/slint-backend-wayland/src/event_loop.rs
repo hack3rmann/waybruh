@@ -223,7 +223,7 @@ impl Platform for WaylandPlatform {
             client_state.take().unwrap()
         };
 
-        const TIMEOUT: Duration = Duration::from_millis(10_000);
+        const TIMEOUT: Duration = Duration::from_millis(100);
 
         event_loop
             .run(TIMEOUT, &mut client_state, |_| {
