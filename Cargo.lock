@@ -5075,6 +5075,18 @@ version = "0.1.0"
 dependencies = [
  "slint-interpreter",
  "thiserror 2.0.18",
+ "waybruh-ui-macros",
+]
+
+[[package]]
+name = "waybruh-ui-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "slint-interpreter",
+ "spin_on",
+ "syn",
 ]
 
 [[package]]

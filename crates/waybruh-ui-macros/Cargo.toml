@@ -1,5 +1,5 @@
 [package]
-name = "waybruh-ui"
+name = "waybruh-ui-macros"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,12 @@ rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[lib]
+proc-macro = true
+
 [dependencies]
+syn = { version = "2.0.99", features = ["full", "extra-traits"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+spin_on = "0.1.1"
 slint-interpreter.workspace = true
-thiserror.workspace = true
-waybruh-ui-macros.workspace = true

@@ -1,14 +1,13 @@
-use slint_interpreter::{ComponentInstance, SetCallbackError, Value};
-use thiserror::Error;
-
-pub use crate::{instance_ext::InstanceExt, shell::ShellExecute};
-
 pub mod instance_ext;
 pub mod shell;
 
-pub const RE_EXPORTS: &str = r#"
-export { Shell } from "waybruh/globals.slint";
-"#;
+use slint_interpreter::{ComponentInstance, SetCallbackError, Value};
+use thiserror::Error;
+use waybruh_ui_macros::compile_exports_from;
+
+pub use crate::{instance_ext::InstanceExt, shell::ShellExecute};
+
+pub const RE_EXPORTS: &str = compile_exports_from!(["components/waybruh/globals.slint"]);
 
 pub fn populate_instance(instance: &ComponentInstance) -> Result<(), InitError> {
     instance.add_global_callback::<ShellExecute>()?;
