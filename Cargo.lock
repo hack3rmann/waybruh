@@ -1696,7 +1696,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.18",
- "windows 0.62.2",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -3309,9 +3309,9 @@ dependencies = [
 
 [[package]]
 name = "ordered-float"
-version = "5.1.0"
+version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f4779c6901a562440c3786d08192c6fbda7c1c2060edd10006b05ee35d10f2d"
+checksum = "b7d950ca161dc355eaf28f82b11345ed76c6e1f6eb1f4f4479e0323b9e2fbd0e"
 dependencies = [
  "num-traits",
 ]
@@ -3527,9 +3527,9 @@ dependencies = [
 
 [[package]]
 name = "portable-atomic-util"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "091397be61a01d4be58e7841595bd4bfedb15f1cd54977d79b8271e94ed799a3"
+checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
 dependencies = [
  "portable-atomic",
 ]
@@ -5066,6 +5066,28 @@ dependencies = [
  "slint-backend-wayland",
  "slint-interpreter",
  "tokio",
+ "waybruh-ui",
+]
+
+[[package]]
+name = "waybruh-ui"
+version = "0.1.0"
+dependencies = [
+ "slint",
+ "slint-interpreter",
+ "thiserror 2.0.18",
+ "waybruh-ui-macros",
+]
+
+[[package]]
+name = "waybruh-ui-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "slint-interpreter",
+ "spin_on",
+ "syn",
 ]
 
 [[package]]
