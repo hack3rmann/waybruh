@@ -1,7 +1,13 @@
+export struct ProgramOutput {
+    stdout: string,
+    stderr: string,
+    exit_code: int,
+}
+
 export global Shell {
-    callback execute(string) -> string;
+    callback execute(string) -> ProgramOutput;
 }
 
 export global Command {
-    callback execute([string]) -> string;
+    callback execute([string]) -> ProgramOutput;
 }

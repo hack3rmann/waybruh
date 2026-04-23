@@ -16,7 +16,7 @@ export component BruhBar inherits Window {
 
         Button {
             clicked => {
-                root.text = Shell.execute("head -c 8 /dev/random");
+                root.text = Shell.execute("echo $HOME").stdout;
             }
         }
     }

@@ -1,5 +1,5 @@
 use crate::GlobalCallback;
-use slint_interpreter::{SharedString, Value};
+use slint_interpreter::{SharedString, Struct, Value};
 use std::process::{Command, Stdio};
 
 pub struct ShellExecute;
@@ -41,7 +41,19 @@ impl GlobalCallback for ShellExecute {
         };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let exit_code = output.status.code().unwrap_or(-1);
 
-        Value::String(SharedString::from(stdout.as_ref()))
+        Value::Struct(Struct::from_iter([
+            (
+                "stdout".to_owned(),
+                Value::String(SharedString::from(stdout.as_ref())),
+            ),
+            (
+                "stderr".to_owned(),
+                Value::String(SharedString::from(stderr.as_ref())),
+            ),
+            ("exit_code".to_owned(), Value::Number(exit_code as f64)),
+        ]))
     }
 }
