@@ -4105,6 +4105,7 @@ dependencies = [
  "lazy_static",
  "raw-window-handle",
  "slint",
+ "slint-interpreter",
  "smithay-client-toolkit 0.20.0 (git+https://github.com/hack3rmann/client-toolkit.git?rev=1533d54268070edd15cf718cd6c4a18e71e803eb)",
 ]
 

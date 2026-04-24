@@ -1,6 +1,5 @@
 use clap::Parser;
-use slint_backend_wayland::start_window;
-use slint_interpreter::{Compiler, ComponentHandle, ComponentInstance};
+use slint_interpreter::{Compiler, ComponentInstance};
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -13,7 +12,7 @@ async fn main() {
 
     let instance = prepare_main_component(&compiler, args.path, &args.entry).await;
 
-    start_window::set(move || instance.show().unwrap());
+    slint_backend_wayland::instance::set(instance);
 
     slint::run_event_loop().unwrap();
 }
