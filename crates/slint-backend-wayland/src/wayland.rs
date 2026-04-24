@@ -1,11 +1,11 @@
-use crate::ChannelWrapper;
+use crate::{ChannelWrapper, scaling};
 use calloop::LoopSignal;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
     RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
 };
 use slint::{
-    LogicalPosition, PhysicalSize,
+    LogicalSize, PhysicalPosition, PhysicalSize,
     platform::{PointerEventButton, WindowEvent},
 };
 use smithay_client_toolkit::{
@@ -39,7 +39,7 @@ use smithay_client_toolkit::{
     shm::{Shm, ShmHandler},
 };
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::HashMap,
     ops::Deref,
     ptr::NonNull,
     sync::{Arc, Mutex},
@@ -58,9 +58,12 @@ pub enum WaylandEvent {
         surface_id: ObjectId,
     },
     Output(OutputEvent),
+    SurfaceAdded {
+        state: SurfaceState,
+    },
     SurfaceResized {
         surface_id: ObjectId,
-        state: SurfaceState,
+        size: PhysicalSize,
     },
     SurfaceRemoved {
         surface_id: ObjectId,
@@ -69,9 +72,11 @@ pub enum WaylandEvent {
 
 pub type OutputId = ObjectId;
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SurfaceState {
-    pub size: Option<PhysicalSize>,
+    pub size: PhysicalSize,
+    pub surface: WlSurface,
+    pub layer: LayerSurface,
 }
 
 pub struct ClientState {
@@ -104,24 +109,37 @@ impl ClientState {
         }
     }
 
-    pub fn set_surface_size(&mut self, surface_id: ObjectId, size: PhysicalSize) {
+    pub fn add_surface(&mut self, state: SurfaceState) {
         self.event_channel
-            .send(WaylandEvent::SurfaceResized {
-                surface_id: surface_id.clone(),
-                state: SurfaceState { size: Some(size) },
+            .send(WaylandEvent::SurfaceAdded {
+                state: state.clone(),
             })
             .unwrap();
 
-        match self.surface_state.entry(surface_id) {
-            Entry::Occupied(mut entry) => entry.get_mut().size = Some(size),
-            Entry::Vacant(entry) => {
-                entry.insert(SurfaceState { size: Some(size) });
-            }
-        }
+        self.surface_state.insert(state.surface.id(), state);
+    }
+
+    pub fn set_surface_size(&mut self, surface_id: ObjectId, size: PhysicalSize) {
+        let event = WindowEvent::Resized {
+            size: size.to_logical(scaling::get()),
+        };
+
+        self.event_channel
+            .send(WaylandEvent::Window {
+                surface_id: surface_id.clone(),
+                event,
+            })
+            .unwrap();
+
+        let Some(state) = self.surface_state.get_mut(&surface_id) else {
+            return;
+        };
+
+        state.size = size;
     }
 
     pub fn get_surface_size(&self, surface_id: &ObjectId) -> Option<PhysicalSize> {
-        self.surface_state.get(surface_id).and_then(|s| s.size)
+        self.surface_state.get(surface_id).map(|s| s.size)
     }
 
     pub fn remove_surface(&mut self, surface_id: &ObjectId) {
@@ -211,17 +229,17 @@ impl LayerShellHandler for ClientState {
         _: &QueueHandle<Self>,
         layer_surface: &LayerSurface,
         LayerSurfaceConfigure {
-            new_size: (width, _),
+            new_size: (width, height),
             ..
         }: LayerSurfaceConfigure,
         _: u32,
     ) {
         let surface_id = layer_surface.wl_surface().id();
 
-        layer_surface.set_exclusive_zone(40);
+        layer_surface.set_exclusive_zone(height as i32);
         layer_surface.set_anchor(Anchor::TOP);
 
-        self.set_surface_size(surface_id, PhysicalSize { width, height: 40 });
+        self.set_surface_size(surface_id, PhysicalSize { width, height });
     }
 }
 
@@ -323,7 +341,7 @@ impl PointerHandler for ClientState {
             kind,
         } in events
         {
-            let position = LogicalPosition::new(*x as f32, *y as f32);
+            let position = PhysicalPosition::new(*x as i32, *y as i32).to_logical(scaling::get());
 
             let event = match kind {
                 // NOTE(hack3rmann): Enter does not have a matching WindowEvent on Slint's side
@@ -432,7 +450,7 @@ impl WaylandInner {
             .outputs()
             .map(|output| {
                 let surface = compositor_state.create_surface::<ClientState>(&qh);
-                let layer_surface = layer_shell.create_layer_surface::<ClientState>(
+                let layer = layer_shell.create_layer_surface::<ClientState>(
                     &qh,
                     surface.clone(),
                     Layer::Bottom,
@@ -447,19 +465,36 @@ impl WaylandInner {
                     .logical_size
                     .unwrap();
 
-                layer_surface.set_exclusive_zone(0);
-                layer_surface.set_anchor(WlrAnchor::all());
-                layer_surface.set_margin(0, 0, 0, 0);
-                layer_surface.set_size(output_width as u32, 40);
-                layer_surface.set_keyboard_interactivity(KeyboardInteractivity::None);
+                let mut size = LogicalSize {
+                    width: 0.0,
+                    height: 25.0,
+                }
+                .to_physical(scaling::get());
+
+                size = PhysicalSize {
+                    width: output_width as u32,
+                    ..size
+                };
+
+                layer.set_exclusive_zone(0);
+                layer.set_anchor(WlrAnchor::all());
+                layer.set_margin(0, 0, 0, 0);
+                layer.set_size(size.width, size.height);
+                layer.set_keyboard_interactivity(KeyboardInteractivity::None);
 
                 surface.commit();
+
+                client_state.add_surface(SurfaceState {
+                    size,
+                    surface: surface.clone(),
+                    layer: layer.clone(),
+                });
 
                 (
                     output.id(),
                     Arc::new(SurfaceBundle {
                         surface,
-                        layer_surface,
+                        layer_surface: layer,
                     }),
                 )
             })

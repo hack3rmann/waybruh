@@ -10,7 +10,7 @@ use calloop::{
 };
 use i_slint_renderer_skia::SkiaSharedContext;
 use slint::{
-    EventLoopError, PhysicalSize, PlatformError,
+    EventLoopError, PhysicalSize, PlatformError, WindowSize,
     platform::{EventLoopProxy, Platform, WindowAdapter, WindowEvent},
 };
 use smithay_client_toolkit::reexports::{
@@ -23,7 +23,7 @@ use smithay_client_toolkit::reexports::{
 };
 use std::{
     cell::Cell,
-    collections::{HashMap, HashSet, hash_map::Entry},
+    collections::{HashMap, HashSet},
     fmt::{self, Debug},
     rc::Rc,
     sync::{Arc, LazyLock, Mutex, RwLock},
@@ -39,7 +39,7 @@ pub struct PlatformSharedState {
 impl PlatformSharedState {
     pub fn window_size(&self, surface_id: &ObjectId) -> Option<PhysicalSize> {
         let state = self.surface_states.read().unwrap();
-        state.get(surface_id).and_then(|s| s.size)
+        state.get(surface_id).map(|s| s.size)
     }
 }
 
@@ -100,17 +100,17 @@ impl WaylandPlatform {
 
                 outputs.swap_remove(index);
             }
-            WaylandEvent::SurfaceResized { surface_id, state } => {
+            WaylandEvent::SurfaceAdded { state } => {
                 let mut states = self.shared_state.surface_states.write().unwrap();
+                states.insert(state.surface.id(), state);
+            }
+            WaylandEvent::SurfaceResized { surface_id, size } => {
+                let mut states = self.shared_state.surface_states.write().unwrap();
+                let Some(state) = states.get_mut(&surface_id) else {
+                    return;
+                };
 
-                match states.entry(surface_id) {
-                    Entry::Occupied(mut entry) => {
-                        *entry.get_mut() = state;
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(state);
-                    }
-                }
+                state.size = size;
             }
             WaylandEvent::SurfaceRemoved { surface_id } => {
                 let mut states = self.shared_state.surface_states.write().unwrap();
@@ -162,8 +162,18 @@ impl Platform for WaylandPlatform {
 
         let scale_factor = scaling::get();
 
+        let size = {
+            let states = self.shared_state.surface_states.read().unwrap();
+            states[&surface_id].size.to_logical(scale_factor)
+        };
+
         self.handle_wayland_event(WaylandEvent::Window {
             event: WindowEvent::ScaleFactorChanged { scale_factor },
+            surface_id: surface_id.clone(),
+        });
+
+        self.handle_wayland_event(WaylandEvent::Window {
+            event: WindowEvent::Resized { size },
             surface_id,
         });
 
@@ -213,6 +223,20 @@ impl Platform for WaylandPlatform {
                 ChannelEvent::Msg(SlintEvent::RedrawRequested { surface_id }) => {
                     let mut pending = self.pending_rendering.lock().unwrap();
                     pending.insert(surface_id);
+                }
+                ChannelEvent::Msg(SlintEvent::SetWindowSize { surface_id, size }) => {
+                    let Some(state) = state.surface_state.get(&surface_id) else {
+                        return;
+                    };
+
+                    let size = match size {
+                        WindowSize::Physical(physical_size) => physical_size,
+                        WindowSize::Logical(logical_size) => {
+                            logical_size.to_physical(scaling::get())
+                        }
+                    };
+
+                    state.layer.set_size(size.width, size.height);
                 }
                 ChannelEvent::Closed => {}
             })
@@ -270,7 +294,13 @@ pub type SlintFnEvent = Box<dyn FnOnce() + Send>;
 pub enum SlintEvent {
     Fn(SlintFnEvent),
     Quit,
-    RedrawRequested { surface_id: ObjectId },
+    RedrawRequested {
+        surface_id: ObjectId,
+    },
+    SetWindowSize {
+        surface_id: ObjectId,
+        size: WindowSize,
+    },
 }
 
 impl Debug for SlintEvent {
@@ -280,7 +310,11 @@ impl Debug for SlintEvent {
             SlintEvent::Quit => f.write_str("SlintEvent::Quit"),
             SlintEvent::RedrawRequested { surface_id } => write!(
                 f,
-                "SlintEvent::RedrawRequested {{ surface_id: {surface_id:?} }}"
+                "SlintEvent::RedrawRequested {{ surface_id: {surface_id:?} }}",
+            ),
+            SlintEvent::SetWindowSize { surface_id, size } => write!(
+                f,
+                "SlintEvent::SetWindowSize {{ surface_id: {surface_id:?}, size: {size:?} }}",
             ),
         }
     }

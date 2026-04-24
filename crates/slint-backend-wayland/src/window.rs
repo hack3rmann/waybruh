@@ -5,7 +5,7 @@ use crate::{
 use calloop::channel::Sender;
 use i_slint_renderer_skia::{SkiaRenderer, SkiaSharedContext};
 use slint::{
-    PhysicalSize, Window,
+    PhysicalSize, Window, WindowSize,
     platform::{Renderer, WindowAdapter},
 };
 use smithay_client_toolkit::reexports::client::{
@@ -75,6 +75,15 @@ impl WindowAdapter for SlintWindowAdapter {
         self.sender
             .send(SlintEvent::RedrawRequested {
                 surface_id: self.surface.id(),
+            })
+            .unwrap();
+    }
+
+    fn set_size(&self, size: WindowSize) {
+        self.sender
+            .send(SlintEvent::SetWindowSize {
+                surface_id: self.surface.id(),
+                size,
             })
             .unwrap();
     }
