@@ -1,5 +1,6 @@
 use crate::{
     channel::ChannelWrapper,
+    scaling,
     wayland::{ClientState, OutputEvent, SurfaceState, Wayland, WaylandEvent},
     window::SlintWindowAdapter,
 };
@@ -10,7 +11,7 @@ use calloop::{
 use i_slint_renderer_skia::SkiaSharedContext;
 use slint::{
     EventLoopError, PhysicalSize, PlatformError,
-    platform::{EventLoopProxy, Platform, WindowAdapter},
+    platform::{EventLoopProxy, Platform, WindowAdapter, WindowEvent},
 };
 use smithay_client_toolkit::reexports::{
     calloop_wayland_source::WaylandSource,
@@ -143,6 +144,7 @@ impl Platform for WaylandPlatform {
         };
 
         let surface = self.get_output_surface(&output.id()).unwrap().clone();
+        let surface_id = surface.id();
 
         let adapter = SlintWindowAdapter::new(
             Arc::clone(&self.shared_state),
@@ -157,6 +159,13 @@ impl Platform for WaylandPlatform {
             let mut adapters = self.adapters.lock().unwrap();
             adapters.push(adapter.clone());
         }
+
+        let scale_factor = scaling::get();
+
+        self.handle_wayland_event(WaylandEvent::Window {
+            event: WindowEvent::ScaleFactorChanged { scale_factor },
+            surface_id,
+        });
 
         Ok(adapter)
     }
