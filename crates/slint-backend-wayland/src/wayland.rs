@@ -120,14 +120,22 @@ impl ClientState {
     }
 
     pub fn set_surface_size(&mut self, surface_id: ObjectId, size: PhysicalSize) {
-        let event = WindowEvent::Resized {
-            size: size.to_logical(scaling::get()),
-        };
+        let logical_size = size.to_logical(scaling::get());
 
+        let event = WindowEvent::Resized { size: logical_size };
+
+        // FIXME(hack3rmann): remove WaylandEvent::SurfaceAdded
         self.event_channel
             .send(WaylandEvent::Window {
                 surface_id: surface_id.clone(),
                 event,
+            })
+            .unwrap();
+
+        self.event_channel
+            .send(WaylandEvent::SurfaceResized {
+                surface_id: surface_id.clone(),
+                size,
             })
             .unwrap();
 
@@ -255,7 +263,7 @@ impl OutputHandler for ClientState {
             .send(WaylandEvent::Output(OutputEvent::Added(output)))
             .unwrap();
 
-        slint::invoke_from_event_loop(crate::start_window::show).unwrap();
+        slint::invoke_from_event_loop(crate::instance::show).unwrap();
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}

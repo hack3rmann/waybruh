@@ -11,7 +11,7 @@ use calloop::{
 use i_slint_renderer_skia::SkiaSharedContext;
 use slint::{
     EventLoopError, PhysicalSize, PlatformError, WindowSize,
-    platform::{EventLoopProxy, Platform, WindowAdapter, WindowEvent},
+    platform::{EventLoopProxy, LayoutConstraints, Platform, WindowAdapter, WindowEvent},
 };
 use smithay_client_toolkit::reexports::{
     calloop_wayland_source::WaylandSource,
@@ -40,6 +40,14 @@ impl PlatformSharedState {
     pub fn window_size(&self, surface_id: &ObjectId) -> Option<PhysicalSize> {
         let state = self.surface_states.read().unwrap();
         state.get(surface_id).map(|s| s.size)
+    }
+
+    pub fn set_size(&self, surface_id: &ObjectId, size: PhysicalSize) {
+        let mut states = self.surface_states.write().unwrap();
+
+        if let Some(state) = states.get_mut(surface_id) {
+            state.size = size;
+        }
     }
 }
 
@@ -105,12 +113,7 @@ impl WaylandPlatform {
                 states.insert(state.surface.id(), state);
             }
             WaylandEvent::SurfaceResized { surface_id, size } => {
-                let mut states = self.shared_state.surface_states.write().unwrap();
-                let Some(state) = states.get_mut(&surface_id) else {
-                    return;
-                };
-
-                state.size = size;
+                self.shared_state.set_size(&surface_id, size);
             }
             WaylandEvent::SurfaceRemoved { surface_id } => {
                 let mut states = self.shared_state.surface_states.write().unwrap();
@@ -238,6 +241,21 @@ impl Platform for WaylandPlatform {
 
                     state.layer.set_size(size.width, size.height);
                 }
+                ChannelEvent::Msg(SlintEvent::UpdateWindowLayoutConstraints {
+                    surface_id,
+                    contraints,
+                }) => {
+                    let Some(state) = state.surface_state.get(&surface_id) else {
+                        return;
+                    };
+
+                    let size = PhysicalSize {
+                        width: state.size.width,
+                        ..contraints.preferred.to_physical(scaling::get())
+                    };
+
+                    state.layer.set_size(size.width, size.height);
+                }
                 ChannelEvent::Closed => {}
             })
             .unwrap();
@@ -301,6 +319,10 @@ pub enum SlintEvent {
         surface_id: ObjectId,
         size: WindowSize,
     },
+    UpdateWindowLayoutConstraints {
+        surface_id: ObjectId,
+        contraints: LayoutConstraints,
+    },
 }
 
 impl Debug for SlintEvent {
@@ -315,6 +337,13 @@ impl Debug for SlintEvent {
             SlintEvent::SetWindowSize { surface_id, size } => write!(
                 f,
                 "SlintEvent::SetWindowSize {{ surface_id: {surface_id:?}, size: {size:?} }}",
+            ),
+            SlintEvent::UpdateWindowLayoutConstraints {
+                surface_id,
+                contraints,
+            } => write!(
+                f,
+                "SlintEvent::SetWindowSize {{ surface_id: {surface_id:?}, contraints: {contraints:?} }}",
             ),
         }
     }

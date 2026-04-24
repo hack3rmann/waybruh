@@ -6,7 +6,7 @@ use calloop::channel::Sender;
 use i_slint_renderer_skia::{SkiaRenderer, SkiaSharedContext};
 use slint::{
     PhysicalSize, Window, WindowSize,
-    platform::{Renderer, WindowAdapter},
+    platform::{Renderer, WindowAdapter, WindowProperties},
 };
 use smithay_client_toolkit::reexports::client::{
     Proxy as _,
@@ -84,6 +84,15 @@ impl WindowAdapter for SlintWindowAdapter {
             .send(SlintEvent::SetWindowSize {
                 surface_id: self.surface.id(),
                 size,
+            })
+            .unwrap();
+    }
+
+    fn update_window_properties(&self, properties: WindowProperties<'_>) {
+        self.sender
+            .send(SlintEvent::UpdateWindowLayoutConstraints {
+                surface_id: self.surface.id(),
+                contraints: properties.layout_constraints(),
             })
             .unwrap();
     }

@@ -1,7 +1,7 @@
 pub mod channel;
 pub mod event_loop;
+pub mod instance;
 pub mod scaling;
-pub mod start_window;
 pub mod wayland;
 pub mod window;
 

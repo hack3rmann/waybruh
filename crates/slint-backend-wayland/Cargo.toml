@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 slint.workspace = true
+slint-interpreter.workspace = true
 i-slint-renderer-skia.workspace = true
 calloop = "0.14.4"
 raw-window-handle = "0.6.2"

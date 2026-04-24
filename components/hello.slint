@@ -2,8 +2,8 @@ import { Button } from "std-widgets.slint";
 import { Command } from "waybruh/globals.slint";
 
 export component BruhBar inherits Window {
-    // width: 2520px;
-    height: 25px;
+    title: "Waybruh";
+    preferred-height: 50px;
 
     default-font-size: 12pt;
 
@@ -12,14 +12,14 @@ export component BruhBar inherits Window {
             width: 100%;
             text: "Hello, World";
             clicked => {
-                self.text = Command.execute(["head", "-c", "8", "/dev/random"]).stdout;
+                self.text = root.width / 1px;
             }
         }
         Button {
             width: 100%;
             text: "Hello, World";
             clicked => {
-                self.text = Command.execute(["head", "-c", "8", "/dev/random"]).stdout;
+                self.text = root.height / 1px;
             }
         }
     }
