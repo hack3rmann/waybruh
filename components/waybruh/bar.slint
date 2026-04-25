@@ -14,3 +14,18 @@ export component Bar inherits Window {
         }
     };
 }
+
+export component BarLayout inherits VerticalLayout {
+    in property <length> exclusive-zone;
+
+    alignment: start;
+    width: 100%;
+    height: 100%;
+
+    HorizontalLayout {
+        // Match drawn content's height to the exclusive zone
+        height <=> root.exclusive-zone;
+
+        @children
+    }
+}

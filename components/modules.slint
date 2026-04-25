@@ -1,0 +1,32 @@
+component Modules inherits HorizontalLayout {
+    @children
+}
+
+export component ModulesLeft inherits Modules {
+    alignment: start;
+    padding-left: 6px;
+
+    Text {
+        text: "Modules Left";
+        color: white;
+    }
+}
+
+export component ModulesCenter inherits Modules {
+    alignment: center;
+
+    Text {
+        text: "Modules Center";
+        color: white;
+    }
+}
+
+export component ModulesRight inherits Modules {
+    alignment: end;
+    padding-right: 6px;
+
+    Text {
+        text: "Modules Right";
+        color: white;
+    }
+}

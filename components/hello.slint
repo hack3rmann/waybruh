@@ -1,26 +1,29 @@
 import { Button } from "std-widgets.slint";
-import { Bar } from "waybruh/bar.slint";
+import { Bar, BarLayout } from "waybruh/bar.slint";
+import { ModulesLeft, ModulesCenter, ModulesRight } from "modules.slint";
 
 export component BruhBar inherits Bar {
     exclusive-zone: 15px;
     default-font-size: 8pt;
     default-font-family: "JetBrainsMono Nerd Font";
 
-    VerticalLayout {
-        alignment: start;
+    BarLayout {
+        VerticalLayout {
+            alignment: center;
 
-        HorizontalLayout {
-            // Match drawn content's height to the exclusive zone
-            height <=> root.exclusive-zone;
+            ModulesLeft { }
+        }
 
-            VerticalLayout {
-                alignment: center;
+        VerticalLayout {
+            alignment: center;
 
-                Text {
-                    text: "Hello, World";
-                    color: white;
-                }
-            }
+            ModulesCenter { }
+        }
+
+        VerticalLayout {
+            alignment: center;
+
+            ModulesRight { }
         }
     }
 }
