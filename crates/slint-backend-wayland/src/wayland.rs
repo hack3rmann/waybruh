@@ -114,6 +114,7 @@ pub struct ClientState {
     pub exit_signal: Option<LoopSignal>,
     pub compositor_state: CompositorState,
     pub layer_shell: LayerShell,
+    pub need_roundtrip: bool,
 }
 
 impl ClientState {
@@ -172,19 +173,19 @@ impl ClientState {
     }
 
     fn create_output(&mut self, qh: &QueueHandle<Self>, output: WlOutput) {
-        self.create_surface(qh, &output);
-
         let output_id = output.id();
 
         {
             let mut outputs = self.shared_state.pending_outputs.write().unwrap();
-            outputs.push(output);
+            outputs.push(output.clone());
         }
 
         // TODO(hack3rmann): move this to WaylandEvent::Fn
         self.slint_channel
             .send(SlintEvent::Fn(Box::new(move || instance::show(output_id))))
             .unwrap();
+
+        self.create_surface(qh, &output);
     }
 
     fn create_surface(&mut self, qh: &QueueHandle<Self>, output: &WlOutput) {
@@ -334,6 +335,7 @@ impl OutputHandler for ClientState {
 
     fn new_output(&mut self, _: &Connection, qh: &QueueHandle<Self>, output: WlOutput) {
         self.create_output(qh, output.clone());
+        self.need_roundtrip = true;
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
@@ -528,6 +530,7 @@ impl WaylandInner {
             pointer: None,
             event_channel: ChannelWrapper::default(),
             exit_signal: None,
+            need_roundtrip: false,
         };
 
         const N_ROUNDTRIPTS: usize = 2;

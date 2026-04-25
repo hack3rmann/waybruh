@@ -215,7 +215,12 @@ impl Platform for WaylandPlatform {
 
         handle
             .insert_source(wayland_source, |(), queue, state| {
-                queue.dispatch_pending(state)
+                if state.need_roundtrip {
+                    state.need_roundtrip = false;
+                    queue.roundtrip(state)
+                } else {
+                    queue.dispatch_pending(state)
+                }
             })
             .unwrap();
 
