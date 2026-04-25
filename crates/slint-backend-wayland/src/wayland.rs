@@ -47,7 +47,6 @@ use smithay_client_toolkit::{
     shell::wlr_layer::Anchor,
 };
 use std::{
-    collections::HashMap,
     ops::Deref,
     ptr::NonNull,
     sync::{Arc, Mutex},
@@ -63,17 +62,6 @@ pub enum OutputEvent {
 pub enum WaylandEvent {
     Window {
         event: WindowEvent,
-        surface_id: ObjectId,
-    },
-    Output(OutputEvent),
-    SurfaceAdded {
-        state: SurfaceState,
-    },
-    SurfaceResized {
-        surface_id: ObjectId,
-        size: PhysicalSize,
-    },
-    SurfaceRemoved {
         surface_id: ObjectId,
     },
 }
@@ -121,7 +109,6 @@ pub struct ClientState {
     pub registry_state: RegistryState,
     pub seat_state: SeatState,
     pub shm: Shm,
-    pub surface_state: HashMap<ObjectId, SurfaceState>,
     pub pointer: Option<WlPointer>,
     pub event_channel: ChannelWrapper<WaylandEvent>,
     pub exit_signal: Option<LoopSignal>,
@@ -130,44 +117,6 @@ pub struct ClientState {
 }
 
 impl ClientState {
-    // FIXME(hack3rmann): clippy::too_many_arguments
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        shared_state: Arc<PlatformSharedState>,
-        slint_channel: Sender<SlintEvent>,
-        output_state: OutputState,
-        registry_state: RegistryState,
-        seat_state: SeatState,
-        shm: Shm,
-        compositor_state: CompositorState,
-        layer_shell: LayerShell,
-    ) -> Self {
-        Self {
-            shared_state,
-            slint_channel,
-            output_state,
-            registry_state,
-            seat_state,
-            shm,
-            pointer: None,
-            event_channel: ChannelWrapper::default(),
-            exit_signal: None,
-            surface_state: HashMap::new(),
-            compositor_state,
-            layer_shell,
-        }
-    }
-
-    pub fn add_surface(&mut self, state: SurfaceState) {
-        self.event_channel
-            .send(WaylandEvent::SurfaceAdded {
-                state: state.clone(),
-            })
-            .unwrap();
-
-        self.surface_state.insert(state.surface.id(), state);
-    }
-
     pub fn set_surface_size(&mut self, surface_id: ObjectId, size: PhysicalSize) {
         let logical_size = size.to_logical(scaling::get());
 
@@ -181,14 +130,11 @@ impl ClientState {
             })
             .unwrap();
 
-        self.event_channel
-            .send(WaylandEvent::SurfaceResized {
-                surface_id: surface_id.clone(),
-                size,
-            })
-            .unwrap();
+        self.shared_state.set_size(&surface_id, size);
 
-        let Some(state) = self.surface_state.get_mut(&surface_id) else {
+        let mut states = self.shared_state.surface_states.write().unwrap();
+
+        let Some(state) = states.get_mut(&surface_id) else {
             return;
         };
 
@@ -196,20 +142,52 @@ impl ClientState {
     }
 
     pub fn get_surface_size(&self, surface_id: &ObjectId) -> Option<PhysicalSize> {
-        self.surface_state.get(surface_id).map(|s| s.size)
+        let states = self.shared_state.surface_states.read().unwrap();
+        states.get(surface_id).map(|s| s.size)
     }
 
     pub fn remove_surface(&mut self, surface_id: &ObjectId) {
-        self.event_channel
-            .send(WaylandEvent::SurfaceRemoved {
-                surface_id: surface_id.clone(),
-            })
-            .unwrap();
-
-        self.surface_state.remove(surface_id);
+        let mut states = self.shared_state.surface_states.write().unwrap();
+        states.remove(surface_id);
     }
 
-    fn create_surface(&mut self, qh: &QueueHandle<Self>, output: &WlOutput) -> SurfaceState {
+    fn destroy_output(&mut self, output: &WlOutput) {
+        {
+            let mut windows = self.shared_state.windows.write().unwrap();
+            windows.remove(&output.id());
+        }
+
+        {
+            let mut pending = self.shared_state.pending_outputs.write().unwrap();
+            let Some(index) = pending
+                .iter()
+                .enumerate()
+                .find_map(|(i, o)| (o.id() == output.id()).then_some(i))
+            else {
+                return;
+            };
+
+            pending.swap_remove(index);
+        }
+    }
+
+    fn create_output(&mut self, qh: &QueueHandle<Self>, output: WlOutput) {
+        self.create_surface(qh, &output);
+
+        let output_id = output.id();
+
+        {
+            let mut outputs = self.shared_state.pending_outputs.write().unwrap();
+            outputs.push(output);
+        }
+
+        // TODO(hack3rmann): move this to WaylandEvent::Fn
+        self.slint_channel
+            .send(SlintEvent::Fn(Box::new(move || instance::show(output_id))))
+            .unwrap();
+    }
+
+    fn create_surface(&mut self, qh: &QueueHandle<Self>, output: &WlOutput) {
         let surface = self.compositor_state.create_surface::<ClientState>(qh);
         let layer = self.layer_shell.create_layer_surface::<ClientState>(
             qh,
@@ -255,14 +233,15 @@ impl ClientState {
             layer: layer.clone(),
         };
 
-        self.add_surface(state.clone());
+        {
+            let mut states = self.shared_state.surface_states.write().unwrap();
+            states.insert(state.surface.id(), state.clone());
+        }
 
         {
             let mut windows = self.shared_state.windows.write().unwrap();
-            windows.insert(output.id(), Arc::new(state.clone()));
+            windows.insert(output.id(), Arc::new(state));
         }
-
-        state
     }
 }
 
@@ -354,28 +333,14 @@ impl OutputHandler for ClientState {
     }
 
     fn new_output(&mut self, _: &Connection, qh: &QueueHandle<Self>, output: WlOutput) {
-        let output_id = output.id();
-
-        _ = self.create_surface(qh, &output);
-
-        self.event_channel
-            .send(WaylandEvent::Output(OutputEvent::Added(output)))
-            .unwrap();
-
-        // TODO(hack3rmann): move this to WaylandEvent::Fn
-        self.slint_channel
-            .send(SlintEvent::Fn(Box::new(move || instance::show(output_id))))
-            .unwrap();
+        self.create_output(qh, output.clone());
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
 
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
         instance::remove(&output.id());
-
-        self.event_channel
-            .send(WaylandEvent::Output(OutputEvent::Removed(output)))
-            .unwrap();
+        self.destroy_output(&output);
     }
 }
 
@@ -538,7 +503,7 @@ pub struct WaylandInner {
 }
 
 impl WaylandInner {
-    pub fn new(slint_sender: Sender<SlintEvent>, shared_state: Arc<PlatformSharedState>) -> Self {
+    pub fn new(slint_channel: Sender<SlintEvent>, shared_state: Arc<PlatformSharedState>) -> Self {
         let connection = Connection::connect_to_env().unwrap();
         let (globals, mut event_queue) = registry_queue_init::<ClientState>(&connection).unwrap();
         let qh = event_queue.handle();
@@ -551,16 +516,19 @@ impl WaylandInner {
         let output_state = OutputState::new(&globals, &qh);
         let seat_state = SeatState::new(&globals, &qh);
 
-        let mut state = ClientState::new(
-            Arc::clone(&shared_state),
-            slint_sender,
+        let mut state = ClientState {
+            slint_channel,
             output_state,
             registry_state,
             seat_state,
             shm,
             compositor_state,
             layer_shell,
-        );
+            shared_state: Arc::clone(&shared_state),
+            pointer: None,
+            event_channel: ChannelWrapper::default(),
+            exit_signal: None,
+        };
 
         const N_ROUNDTRIPTS: usize = 2;
 

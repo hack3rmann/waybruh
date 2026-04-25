@@ -2,7 +2,7 @@ use crate::{
     channel::ChannelWrapper,
     scaling,
     system::{self, SystemEvent},
-    wayland::{ClientState, OutputEvent, SurfaceState, Wayland, WaylandEvent},
+    wayland::{ClientState, SurfaceState, Wayland, WaylandEvent},
     window::SlintWindowAdapter,
 };
 use calloop::{
@@ -110,34 +110,6 @@ impl WaylandPlatform {
                     adapter.window().dispatch_event(event.clone());
                 }
             }
-            WaylandEvent::Output(OutputEvent::Added(output)) => {
-                let mut outputs = self.shared_state.pending_outputs.write().unwrap();
-                outputs.push(output);
-            }
-            WaylandEvent::Output(OutputEvent::Removed(output)) => {
-                let mut outputs = self.shared_state.pending_outputs.write().unwrap();
-
-                let Some(index) = outputs
-                    .iter()
-                    .enumerate()
-                    .find_map(|(i, o)| (o.id() == output.id()).then_some(i))
-                else {
-                    return;
-                };
-
-                outputs.swap_remove(index);
-            }
-            WaylandEvent::SurfaceAdded { state } => {
-                let mut states = self.shared_state.surface_states.write().unwrap();
-                states.insert(state.surface.id(), state);
-            }
-            WaylandEvent::SurfaceResized { surface_id, size } => {
-                self.shared_state.set_size(&surface_id, size);
-            }
-            WaylandEvent::SurfaceRemoved { surface_id } => {
-                let mut states = self.shared_state.surface_states.write().unwrap();
-                states.remove(&surface_id);
-            }
         }
     }
 }
@@ -229,8 +201,10 @@ impl Platform for WaylandPlatform {
         handle
             .insert_source(system_source, |event, (), state| match event {
                 ChannelEvent::Msg(SystemEvent::ExclusiveZoneChanged(zone)) => {
+                    let states = self.shared_state.surface_states.read().unwrap();
+
                     // TODO(hack3rmann): match the exclusive zone to the source surface
-                    for surface_state in state.surface_state.values() {
+                    for surface_state in states.values() {
                         surface_state.set_exclusive_zone(&state.compositor_state, zone);
                         surface_state.layer.commit();
                     }
@@ -267,7 +241,9 @@ impl Platform for WaylandPlatform {
                     pending.insert(surface_id);
                 }
                 ChannelEvent::Msg(SlintEvent::SetWindowSize { surface_id, size }) => {
-                    let Some(state) = state.surface_state.get(&surface_id) else {
+                    let states = self.shared_state.surface_states.read().unwrap();
+
+                    let Some(state) = states.get(&surface_id) else {
                         return;
                     };
 
