@@ -11,7 +11,8 @@ fn scale_from_var(name: &str) -> Option<f32> {
 }
 
 pub static GDK_SCALE: LazyLock<Option<f32>> = LazyLock::new(|| scale_from_var("GDK_SCALE"));
-pub static SLINT_SCALE: LazyLock<Option<f32>> = LazyLock::new(|| scale_from_var("SLINT_SCALE"));
+pub static SLINT_SCALE: LazyLock<Option<f32>> =
+    LazyLock::new(|| scale_from_var("SLINT_SCALE_FACTOR"));
 
 pub static SCALE_FACTOR: LazyLock<f32> =
     LazyLock::new(|| SLINT_SCALE.or(*GDK_SCALE).unwrap_or(DEFAULT_SCALE));
