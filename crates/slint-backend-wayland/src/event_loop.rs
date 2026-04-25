@@ -8,6 +8,7 @@ use crate::{
 use calloop::{
     EventLoop,
     channel::{Event as ChannelEvent, Sender},
+    timer::{TimeoutAction, Timer},
 };
 use i_slint_renderer_skia::SkiaSharedContext;
 use slint::{
@@ -217,6 +218,15 @@ impl Platform for WaylandPlatform {
             .channel()
             .take_receiver()
             .expect("event should not be taken");
+
+        // TODO(hack3rmann): handle different refresh rates
+        let frame_time = Duration::from_secs_f32(1.0 / 60.0);
+
+        handle
+            .insert_source(Timer::from_duration(frame_time), move |_, _, _| {
+                TimeoutAction::ToDuration(frame_time)
+            })
+            .unwrap();
 
         handle
             .insert_source(system_source, |event, (), state| match event {
