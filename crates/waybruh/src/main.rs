@@ -1,5 +1,5 @@
 use clap::Parser;
-use slint_interpreter::{Compiler, ComponentInstance};
+use slint_interpreter::{Compiler, ComponentDefinition};
 use std::path::PathBuf;
 use tokio::fs;
 
@@ -10,9 +10,10 @@ async fn main() {
     let compiler = Compiler::default();
     let args = Args::parse();
 
-    let instance = prepare_main_component(&compiler, args.path, &args.entry).await;
+    let definition = prepare_main_component(&compiler, args.path, &args.entry).await;
 
-    slint_backend_wayland::instance::set(instance);
+    slint_backend_wayland::instance::set_show_hook(|i| waybruh_ui::populate_instance(i).unwrap());
+    slint_backend_wayland::instance::set_definition(definition);
 
     slint::run_event_loop().unwrap();
 }
@@ -32,7 +33,7 @@ async fn prepare_main_component(
     compiler: &Compiler,
     path: PathBuf,
     entry: &str,
-) -> ComponentInstance {
+) -> ComponentDefinition {
     let mut source_code = fs::read_to_string(&path).await.unwrap();
 
     source_code.push_str(waybruh_ui::RE_EXPORTS);
@@ -44,9 +45,5 @@ async fn prepare_main_component(
         panic!("failed to find BruhBar component in {}", path.display(),);
     };
 
-    let instance = definition.create().unwrap();
-
-    waybruh_ui::populate_instance(&instance).unwrap();
-
-    instance
+    definition
 }

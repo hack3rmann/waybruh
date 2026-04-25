@@ -1,35 +1,79 @@
 use slint::ComponentHandle;
-use slint_interpreter::{ComponentInstance, GetPropertyError, SetPropertyError, Value};
-use std::cell::RefCell;
+use slint_interpreter::{
+    ComponentDefinition, ComponentInstance, GetPropertyError, SetPropertyError, Value,
+};
+use smithay_client_toolkit::reexports::client::backend::ObjectId;
+use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
 
+type ShowHook = Box<dyn Fn(&ComponentInstance)>;
+
 thread_local! {
-    static COMPONENT_INSTANCE: RefCell<Option<ComponentInstance>> = const { RefCell::new(None) };
+    static COMPONENT_DEFINITION: RefCell<Option<ComponentDefinition>>
+        = const { RefCell::new(None) };
+
+    static COMPONENT_INSTANCES: RefCell<HashMap<ObjectId, ComponentInstance>>
+        = RefCell::default();
+
+    static SHOW_HOOK: RefCell<Option<ShowHook>> = const { RefCell::new(None) };
 }
 
-pub fn set(instance: ComponentInstance) {
-    COMPONENT_INSTANCE.with_borrow_mut(|i| {
-        *i = Some(instance);
-    });
+fn create_instance() -> Option<ComponentInstance> {
+    COMPONENT_DEFINITION.with_borrow(|d| d.as_ref().and_then(|d| d.create().ok()))
 }
 
-pub fn show() {
-    COMPONENT_INSTANCE.with_borrow(|i| {
-        if let Some(instance) = i {
-            instance.show().unwrap();
+fn execute_show_hook(instance: &ComponentInstance) {
+    SHOW_HOOK.with_borrow(|h| {
+        if let Some(hook) = h {
+            hook(instance);
         }
     });
 }
 
-pub fn set_property(name: &str, value: Value) -> Result<(), InstanceSetPropertyError> {
-    COMPONENT_INSTANCE.with_borrow(|i| match i {
-        Some(instance) => Ok(instance.set_property(name, value)?),
-        None => Err(InstanceSetPropertyError::NoInstance),
+pub fn set_definition(definition: ComponentDefinition) {
+    COMPONENT_DEFINITION.with_borrow_mut(|d| {
+        *d = Some(definition);
+    });
+}
+
+pub fn set_show_hook(hook: impl Fn(&ComponentInstance) + 'static) {
+    SHOW_HOOK.with_borrow_mut(|h| {
+        *h = Some(Box::new(hook));
     })
 }
 
+pub fn show(output_id: ObjectId) {
+    COMPONENT_INSTANCES.with_borrow_mut(|i| {
+        let instance = i
+            .entry(output_id)
+            .or_insert_with(|| create_instance().unwrap());
+
+        execute_show_hook(instance);
+
+        instance.show().unwrap();
+    });
+}
+
+pub fn remove(output_id: &ObjectId) {
+    COMPONENT_INSTANCES.with_borrow_mut(|i| {
+        i.remove(output_id);
+    });
+}
+
+// FIXME(hack3rmann): per-output property set
+pub fn set_property(name: &str, value: Value) -> Result<(), InstanceSetPropertyError> {
+    COMPONENT_INSTANCES.with_borrow(|i| {
+        for instance in i.values() {
+            instance.set_property(name, value.clone())?;
+        }
+
+        Ok(())
+    })
+}
+
+// FIXME(hack3rmann): per-output property get
 pub fn get_property(name: &str) -> Result<Value, InstanceGetPropertyError> {
-    COMPONENT_INSTANCE.with_borrow(|i| match i {
+    COMPONENT_INSTANCES.with_borrow(|i| match i.values().next() {
         Some(instance) => Ok(instance.get_property(name)?),
         None => Err(InstanceGetPropertyError::NoInstance),
     })

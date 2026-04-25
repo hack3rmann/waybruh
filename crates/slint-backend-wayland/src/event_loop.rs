@@ -2,7 +2,7 @@ use crate::{
     channel::ChannelWrapper,
     scaling,
     system::{self, SystemEvent},
-    wayland::{ClientState, OutputEvent, SurfaceState, Wayland, WaylandEvent},
+    wayland::{ClientState, SurfaceState, Wayland, WaylandEvent},
     window::SlintWindowAdapter,
 };
 use calloop::{
@@ -27,16 +27,16 @@ use smithay_client_toolkit::{
     shell::WaylandSurface,
 };
 use std::{
-    cell::Cell,
     collections::{HashMap, HashSet},
     fmt::{self, Debug},
     rc::Rc,
-    sync::{Arc, LazyLock, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 
 #[derive(Default)]
 pub struct PlatformSharedState {
+    pub windows: RwLock<HashMap<ObjectId, Arc<SurfaceState>>>,
     pub surface_states: RwLock<HashMap<ObjectId, SurfaceState>>,
     pub pending_outputs: RwLock<Vec<WlOutput>>,
 }
@@ -56,14 +56,27 @@ impl PlatformSharedState {
     }
 }
 
-#[derive(Default)]
 pub struct WaylandPlatform {
-    wayland: LazyLock<Wayland>,
+    wayland: Wayland,
     slint_event_channel: ChannelWrapper<SlintEvent>,
     adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
     shared_state: Arc<PlatformSharedState>,
-    is_event_loop_initialized: Cell<bool>,
     pending_rendering: Mutex<HashSet<ObjectId>>,
+}
+
+impl Default for WaylandPlatform {
+    fn default() -> Self {
+        let shared_state = Arc::<PlatformSharedState>::default();
+        let slint_event_channel = ChannelWrapper::default();
+
+        Self {
+            wayland: Wayland::new(slint_event_channel.make_sender(), Arc::clone(&shared_state)),
+            slint_event_channel,
+            adapters: Mutex::default(),
+            shared_state,
+            pending_rendering: Mutex::default(),
+        }
+    }
 }
 
 impl WaylandPlatform {
@@ -71,8 +84,9 @@ impl WaylandPlatform {
         self.get_output_surface(output_id).map(|s| s.id())
     }
 
-    pub fn get_output_surface(&self, output_id: &ObjectId) -> Option<&WlSurface> {
-        self.wayland.windows.get(output_id).map(|w| &w.surface)
+    pub fn get_output_surface(&self, output_id: &ObjectId) -> Option<WlSurface> {
+        let windows = self.shared_state.windows.read().unwrap();
+        windows.get(output_id).map(|w| &w.surface).cloned()
     }
 
     pub fn window_size(&self, output_id: &ObjectId) -> Option<PhysicalSize> {
@@ -96,56 +110,12 @@ impl WaylandPlatform {
                     adapter.window().dispatch_event(event.clone());
                 }
             }
-            WaylandEvent::Output(OutputEvent::Added(output)) => {
-                let mut outputs = self.shared_state.pending_outputs.write().unwrap();
-                outputs.push(output);
-            }
-            WaylandEvent::Output(OutputEvent::Removed(output)) => {
-                let mut outputs = self.shared_state.pending_outputs.write().unwrap();
-
-                let Some(index) = outputs
-                    .iter()
-                    .enumerate()
-                    .find_map(|(i, o)| (o.id() == output.id()).then_some(i))
-                else {
-                    return;
-                };
-
-                outputs.swap_remove(index);
-            }
-            WaylandEvent::SurfaceAdded { state } => {
-                let mut states = self.shared_state.surface_states.write().unwrap();
-                states.insert(state.surface.id(), state);
-            }
-            WaylandEvent::SurfaceResized { surface_id, size } => {
-                self.shared_state.set_size(&surface_id, size);
-            }
-            WaylandEvent::SurfaceRemoved { surface_id } => {
-                let mut states = self.shared_state.surface_states.write().unwrap();
-                states.remove(&surface_id);
-            }
         }
     }
 }
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        if !self.is_event_loop_initialized.get() {
-            let state = self.wayland.client_state.lock().unwrap();
-            let state = state
-                .as_ref()
-                .expect("client state should not be taken before event loop initialization");
-
-            let receiver = state.event_channel.receiver();
-            let receiver = receiver.as_ref().expect(
-                "wayland event receiver should not be taken before event loop initialization",
-            );
-
-            while let Ok(event) = receiver.try_recv() {
-                self.handle_wayland_event(event);
-            }
-        }
-
         let output = {
             let mut outputs = self.shared_state.pending_outputs.write().unwrap();
             outputs.pop().expect("no outputs left")
@@ -231,8 +201,10 @@ impl Platform for WaylandPlatform {
         handle
             .insert_source(system_source, |event, (), state| match event {
                 ChannelEvent::Msg(SystemEvent::ExclusiveZoneChanged(zone)) => {
+                    let states = self.shared_state.surface_states.read().unwrap();
+
                     // TODO(hack3rmann): match the exclusive zone to the source surface
-                    for surface_state in state.surface_state.values() {
+                    for surface_state in states.values() {
                         surface_state.set_exclusive_zone(&state.compositor_state, zone);
                         surface_state.layer.commit();
                     }
@@ -243,7 +215,21 @@ impl Platform for WaylandPlatform {
 
         handle
             .insert_source(wayland_source, |(), queue, state| {
-                queue.dispatch_pending(state)
+                if state.need_roundtrip {
+                    state.need_roundtrip = false;
+                    queue.roundtrip(state)
+                } else {
+                    queue.dispatch_pending(state)
+                }
+            })
+            .unwrap();
+
+        // NOTE(hack3rmann): wayland events must be processed before SlintEvents to initialize the
+        // backend properly
+        handle
+            .insert_source(window_receiver, |event, (), _| match event {
+                ChannelEvent::Msg(event) => self.handle_wayland_event(event),
+                ChannelEvent::Closed => {}
             })
             .unwrap();
 
@@ -260,7 +246,9 @@ impl Platform for WaylandPlatform {
                     pending.insert(surface_id);
                 }
                 ChannelEvent::Msg(SlintEvent::SetWindowSize { surface_id, size }) => {
-                    let Some(state) = state.surface_state.get(&surface_id) else {
+                    let states = self.shared_state.surface_states.read().unwrap();
+
+                    let Some(state) = states.get(&surface_id) else {
                         return;
                     };
 
@@ -278,15 +266,6 @@ impl Platform for WaylandPlatform {
                 ChannelEvent::Closed => {}
             })
             .unwrap();
-
-        handle
-            .insert_source(window_receiver, |event, (), _| match event {
-                ChannelEvent::Msg(event) => self.handle_wayland_event(event),
-                ChannelEvent::Closed => {}
-            })
-            .unwrap();
-
-        self.is_event_loop_initialized.set(true);
 
         let mut client_state = {
             let mut client_state = self.wayland.client_state.lock().unwrap();
