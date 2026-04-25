@@ -30,12 +30,13 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Debug},
     rc::Rc,
-    sync::{Arc, LazyLock, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 
 #[derive(Default)]
 pub struct PlatformSharedState {
+    pub windows: RwLock<HashMap<ObjectId, Arc<SurfaceState>>>,
     pub surface_states: RwLock<HashMap<ObjectId, SurfaceState>>,
     pub pending_outputs: RwLock<Vec<WlOutput>>,
 }
@@ -55,13 +56,27 @@ impl PlatformSharedState {
     }
 }
 
-#[derive(Default)]
 pub struct WaylandPlatform {
-    wayland: LazyLock<Wayland>,
+    wayland: Wayland,
     slint_event_channel: ChannelWrapper<SlintEvent>,
     adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
     shared_state: Arc<PlatformSharedState>,
     pending_rendering: Mutex<HashSet<ObjectId>>,
+}
+
+impl Default for WaylandPlatform {
+    fn default() -> Self {
+        let shared_state = Arc::<PlatformSharedState>::default();
+        let slint_event_channel = ChannelWrapper::default();
+
+        Self {
+            wayland: Wayland::new(slint_event_channel.make_sender(), Arc::clone(&shared_state)),
+            slint_event_channel,
+            adapters: Mutex::default(),
+            shared_state,
+            pending_rendering: Mutex::default(),
+        }
+    }
 }
 
 impl WaylandPlatform {
@@ -69,8 +84,9 @@ impl WaylandPlatform {
         self.get_output_surface(output_id).map(|s| s.id())
     }
 
-    pub fn get_output_surface(&self, output_id: &ObjectId) -> Option<&WlSurface> {
-        self.wayland.windows.get(output_id).map(|w| &w.surface)
+    pub fn get_output_surface(&self, output_id: &ObjectId) -> Option<WlSurface> {
+        let windows = self.shared_state.windows.read().unwrap();
+        windows.get(output_id).map(|w| &w.surface).cloned()
     }
 
     pub fn window_size(&self, output_id: &ObjectId) -> Option<PhysicalSize> {
