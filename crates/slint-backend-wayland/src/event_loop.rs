@@ -235,7 +235,7 @@ impl Platform for WaylandPlatform {
 
         handle
             .insert_source(event_receiver, |event, (), state| match event {
-                ChannelEvent::Msg(SlintEvent::Fn(callback)) => callback(),
+                ChannelEvent::Msg(SlintEvent::Fn(SlintFnEvent(callback))) => callback(),
                 ChannelEvent::Msg(SlintEvent::Quit) => {
                     if let Some(signal) = &state.exit_signal {
                         signal.stop();
@@ -305,8 +305,15 @@ impl Platform for WaylandPlatform {
     }
 }
 
-pub type SlintFnEvent = Box<dyn FnOnce() + Send>;
+pub struct SlintFnEvent(pub Box<dyn FnOnce() + Send>);
 
+impl Debug for SlintFnEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("SlintFnEvent").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug)]
 pub enum SlintEvent {
     Fn(SlintFnEvent),
     Quit,
@@ -321,30 +328,6 @@ pub enum SlintEvent {
         surface_id: ObjectId,
         contraints: LayoutConstraints,
     },
-}
-
-impl Debug for SlintEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SlintEvent::Fn(_) => f.write_str("SlintEvent::Fn(..)"),
-            SlintEvent::Quit => f.write_str("SlintEvent::Quit"),
-            SlintEvent::RedrawRequested { surface_id } => write!(
-                f,
-                "SlintEvent::RedrawRequested {{ surface_id: {surface_id:?} }}",
-            ),
-            SlintEvent::SetWindowSize { surface_id, size } => write!(
-                f,
-                "SlintEvent::SetWindowSize {{ surface_id: {surface_id:?}, size: {size:?} }}",
-            ),
-            SlintEvent::UpdateWindowLayoutConstraints {
-                surface_id,
-                contraints,
-            } => write!(
-                f,
-                "SlintEvent::SetWindowSize {{ surface_id: {surface_id:?}, contraints: {contraints:?} }}",
-            ),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -365,9 +348,12 @@ impl EventLoopProxy for EventLoopHandle {
             .map_err(|_| EventLoopError::NoEventLoopProvider)
     }
 
-    fn invoke_from_event_loop(&self, event: SlintFnEvent) -> Result<(), EventLoopError> {
+    fn invoke_from_event_loop(
+        &self,
+        event: Box<dyn FnOnce() + Send>,
+    ) -> Result<(), EventLoopError> {
         self.sender
-            .send(SlintEvent::Fn(event))
+            .send(SlintEvent::Fn(SlintFnEvent(event)))
             .map_err(|_| EventLoopError::NoEventLoopProvider)
     }
 }

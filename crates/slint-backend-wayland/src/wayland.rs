@@ -1,6 +1,6 @@
 use crate::{
     ChannelWrapper,
-    event_loop::{PlatformSharedState, SlintEvent},
+    event_loop::{PlatformSharedState, SlintEvent, SlintFnEvent},
     instance, scaling,
 };
 use calloop::{LoopSignal, channel::Sender};
@@ -123,7 +123,6 @@ impl ClientState {
 
         let event = WindowEvent::Resized { size: logical_size };
 
-        // FIXME(hack3rmann): remove WaylandEvent::SurfaceAdded
         self.event_channel
             .send(WaylandEvent::Window {
                 surface_id: surface_id.clone(),
@@ -182,7 +181,9 @@ impl ClientState {
 
         // TODO(hack3rmann): move this to WaylandEvent::Fn
         self.slint_channel
-            .send(SlintEvent::Fn(Box::new(move || instance::show(output_id))))
+            .send(SlintEvent::Fn(SlintFnEvent(Box::new(move || {
+                instance::show(output_id)
+            }))))
             .unwrap();
 
         self.create_surface(qh, &output);
