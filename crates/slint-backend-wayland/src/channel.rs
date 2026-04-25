@@ -12,8 +12,12 @@ impl<T> ChannelWrapper<T> {
         receiver.take()
     }
 
-    pub fn sender(&self) -> Sender<T> {
+    pub fn make_sender(&self) -> Sender<T> {
         self.sender.clone()
+    }
+
+    pub fn sender(&self) -> &Sender<T> {
+        &self.sender
     }
 
     pub fn receiver(&self) -> MutexGuard<'_, Option<Channel<T>>> {

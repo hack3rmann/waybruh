@@ -12,3 +12,4 @@ slint-interpreter.workspace = true
 thiserror.workspace = true
 waybruh-ui-macros.workspace = true
 slint.workspace = true
+slint-backend-wayland.workspace = true

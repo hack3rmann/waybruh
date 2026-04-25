@@ -5,12 +5,8 @@ use raw_window_handle::{
     RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
 };
 use slint::{
-    LogicalSize, PhysicalPosition, PhysicalSize,
+    PhysicalPosition, PhysicalSize,
     platform::{PointerEventButton, WindowEvent},
-};
-use smithay_client_toolkit::{
-    compositor::CompositorHandler, delegate_compositor, delegate_shm,
-    reexports::client::protocol::wl_output::Transform, shell::wlr_layer::Anchor,
 };
 use smithay_client_toolkit::{
     compositor::CompositorState,
@@ -37,6 +33,12 @@ use smithay_client_toolkit::{
         },
     },
     shm::{Shm, ShmHandler},
+};
+use smithay_client_toolkit::{
+    compositor::{CompositorHandler, Region},
+    delegate_compositor, delegate_shm,
+    reexports::client::protocol::wl_output::Transform,
+    shell::wlr_layer::Anchor,
 };
 use std::{
     collections::HashMap,
@@ -79,6 +81,17 @@ pub struct SurfaceState {
     pub layer: LayerSurface,
 }
 
+impl SurfaceState {
+    pub fn set_exclusive_zone(&self, compositor: &CompositorState, zone: i32) {
+        let region = Region::new(compositor).unwrap();
+
+        region.add(0, 0, 2520, zone);
+
+        self.layer.set_input_region(Some(region.wl_region()));
+        self.layer.set_exclusive_zone(zone);
+    }
+}
+
 pub struct ClientState {
     pub output_state: OutputState,
     pub registry_state: RegistryState,
@@ -88,6 +101,7 @@ pub struct ClientState {
     pub pointer: Option<WlPointer>,
     pub event_channel: ChannelWrapper<WaylandEvent>,
     pub exit_signal: Option<LoopSignal>,
+    pub compositor_state: CompositorState,
 }
 
 impl ClientState {
@@ -96,6 +110,7 @@ impl ClientState {
         registry_state: RegistryState,
         seat_state: SeatState,
         shm: Shm,
+        compositor_state: CompositorState,
     ) -> Self {
         Self {
             output_state,
@@ -106,6 +121,7 @@ impl ClientState {
             event_channel: ChannelWrapper::default(),
             exit_signal: None,
             surface_state: HashMap::new(),
+            compositor_state,
         }
     }
 
@@ -244,8 +260,8 @@ impl LayerShellHandler for ClientState {
     ) {
         let surface_id = layer_surface.wl_surface().id();
 
-        layer_surface.set_exclusive_zone(height as i32);
         layer_surface.set_anchor(Anchor::TOP);
+        layer_surface.set_exclusive_zone(50);
 
         self.set_surface_size(surface_id, PhysicalSize { width, height });
     }
@@ -421,10 +437,13 @@ impl HasWindowHandle for SurfaceBundle {
     }
 }
 
+pub mod defaults {
+    pub const EXCLUSIVE_ZONE: i32 = 50;
+}
+
 pub struct WaylandInner {
     pub connection: Connection,
     pub event_queue: Mutex<Option<EventQueue<ClientState>>>,
-    pub compositor_state: CompositorState,
     pub layer_shell: LayerShell,
     pub windows: HashMap<ObjectId, Arc<SurfaceBundle>>,
     // TODO(hack3rmann): move the state out of this
@@ -447,52 +466,57 @@ impl WaylandInner {
         let output_state = OutputState::new(&globals, &qh);
         let seat_state = SeatState::new(&globals, &qh);
 
-        let mut client_state = ClientState::new(output_state, registry_state, seat_state, shm);
+        let mut state = ClientState::new(
+            output_state,
+            registry_state,
+            seat_state,
+            shm,
+            compositor_state,
+        );
 
-        event_queue.roundtrip(&mut client_state).unwrap();
+        event_queue.roundtrip(&mut state).unwrap();
 
         // NOTE(hack3rmann): interior mutability does not affect the hash here
         #[allow(clippy::mutable_key_type)]
-        let windows = client_state
+        let windows = state
             .output_state
             .outputs()
             .map(|output| {
-                let surface = compositor_state.create_surface::<ClientState>(&qh);
+                let surface = state.compositor_state.create_surface::<ClientState>(&qh);
                 let layer = layer_shell.create_layer_surface::<ClientState>(
                     &qh,
                     surface.clone(),
-                    Layer::Bottom,
+                    Layer::Top,
                     Some("waybruh"),
                     Some(&output),
                 );
 
-                let (output_width, _) = client_state
+                let (output_width, output_height) = state
                     .output_state
                     .info(&output)
                     .unwrap()
                     .logical_size
                     .unwrap();
 
-                let mut size = LogicalSize {
-                    width: 0.0,
-                    height: 25.0,
-                }
-                .to_physical(scaling::get());
-
-                size = PhysicalSize {
+                let size = PhysicalSize {
                     width: output_width as u32,
-                    ..size
+                    height: output_height as u32,
                 };
 
-                layer.set_exclusive_zone(0);
-                layer.set_anchor(WlrAnchor::all());
+                let input_region = Region::new(&state.compositor_state).unwrap();
+
+                input_region.add(0, 0, output_width, defaults::EXCLUSIVE_ZONE);
+
+                layer.set_input_region(Some(input_region.wl_region()));
+                layer.set_exclusive_zone(defaults::EXCLUSIVE_ZONE);
+                layer.set_anchor(WlrAnchor::TOP);
                 layer.set_margin(0, 0, 0, 0);
                 layer.set_size(size.width, size.height);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
 
                 surface.commit();
 
-                client_state.add_surface(SurfaceState {
+                state.add_surface(SurfaceState {
                     size,
                     surface: surface.clone(),
                     layer: layer.clone(),
@@ -508,17 +532,16 @@ impl WaylandInner {
             })
             .collect();
 
-        let outputs = client_state.output_state.outputs().collect();
+        let outputs = state.output_state.outputs().collect();
 
-        event_queue.roundtrip(&mut client_state).unwrap();
+        event_queue.roundtrip(&mut state).unwrap();
 
         Self {
             connection,
             event_queue: Mutex::new(Some(event_queue)),
-            compositor_state,
             layer_shell,
             windows,
-            client_state: Mutex::new(Some(client_state)),
+            client_state: Mutex::new(Some(state)),
             startup_outputs: Mutex::new(outputs),
         }
     }

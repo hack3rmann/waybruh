@@ -1,25 +1,30 @@
 import { Button } from "std-widgets.slint";
-import { Command } from "waybruh/globals.slint";
+import { Bar } from "waybruh/bar.slint";
 
-export component BruhBar inherits Window {
-    title: "Waybruh";
-    preferred-height: 50px;
-
+export component BruhBar inherits Bar {
     default-font-size: 12pt;
 
-    HorizontalLayout {
-        Button {
-            width: 100%;
-            text: "Hello, World";
-            clicked => {
-                self.text = root.width / 1px;
+    VerticalLayout {
+        HorizontalLayout {
+            // Match drawn content's height to the exclusive zone
+            height <=> root.exclusive-zone;
+
+            Button {
+                width: 50%;
+
+                clicked => {
+                    self.text = root.width / 1px;
+                    root.exclusive-zone += 20px;
+                }
             }
-        }
-        Button {
-            width: 100%;
-            text: "Hello, World";
-            clicked => {
-                self.text = root.height / 1px;
+
+            Button {
+                width: 50%;
+
+                clicked => {
+                    self.text = root.height / 1px;
+                    root.exclusive-zone -= 20px;
+                }
             }
         }
     }
