@@ -6,7 +6,7 @@ use crate::{
     window::SlintWindowAdapter,
 };
 use calloop::{
-    EventLoop,
+    EventLoop, LoopHandle,
     channel::{Event as ChannelEvent, Sender},
     timer::{TimeoutAction, Timer},
 };
@@ -112,6 +112,144 @@ impl WaylandPlatform {
             }
         }
     }
+
+    pub fn handle_system_event(&self, event: SystemEvent, state: &mut ClientState) {
+        match event {
+            SystemEvent::ExclusiveZoneChanged(zone) => {
+                let states = self.shared_state.surface_states.read().unwrap();
+
+                // TODO(hack3rmann): match the exclusive zone to the source surface
+                for surface_state in states.values() {
+                    surface_state.set_exclusive_zone(&state.compositor_state, zone);
+                    surface_state.layer.commit();
+                }
+            }
+        }
+    }
+
+    pub fn handle_slint_event(&self, event: SlintEvent, state: &mut ClientState) {
+        match event {
+            SlintEvent::Fn(SlintFnEvent(callback)) => callback(),
+            SlintEvent::Quit => {
+                if let Some(signal) = &state.exit_signal {
+                    signal.stop();
+                }
+            }
+            SlintEvent::RedrawRequested { surface_id } => {
+                let mut pending = self.pending_rendering.lock().unwrap();
+                pending.insert(surface_id);
+            }
+            SlintEvent::SetWindowSize { surface_id, size } => {
+                let states = self.shared_state.surface_states.read().unwrap();
+
+                let Some(state) = states.get(&surface_id) else {
+                    return;
+                };
+
+                let size = match size {
+                    WindowSize::Physical(physical_size) => physical_size,
+                    WindowSize::Logical(logical_size) => logical_size.to_physical(scaling::get()),
+                };
+
+                state.layer.set_size(size.width, size.height);
+                state.layer.commit();
+            }
+            SlintEvent::UpdateWindowLayoutConstraints { .. } => {}
+        }
+    }
+
+    pub fn insert_event_sources<'h, 's: 'h>(&'s self, handle: &LoopHandle<'h, ClientState>) {
+        let event_receiver = self
+            .slint_event_channel
+            .take_receiver()
+            .expect("event receiver should not be taken");
+
+        let window_receiver = {
+            let state = self.wayland.client_state.lock().unwrap();
+            let state = state.as_ref().unwrap();
+
+            state
+                .event_channel
+                .take_receiver()
+                .expect("wayland event receiver should not be taken")
+        };
+
+        let event_queue = {
+            let mut lock = self.wayland.event_queue.lock().unwrap();
+            lock.take().expect("event should not be taken")
+        };
+
+        let wayland_source = WaylandSource::new(self.wayland.connection.clone(), event_queue);
+
+        let system_source = system::get()
+            .channel()
+            .take_receiver()
+            .expect("event should not be taken");
+
+        // TODO(hack3rmann): handle different refresh rates
+        let frame_time = Duration::from_secs_f32(1.0 / 60.0);
+
+        handle
+            .insert_source(Timer::from_duration(frame_time), move |_, _, _| {
+                TimeoutAction::ToDuration(frame_time)
+            })
+            .unwrap();
+
+        handle
+            .insert_source(system_source, |event, (), state| match event {
+                ChannelEvent::Msg(event) => self.handle_system_event(event, state),
+                ChannelEvent::Closed => {}
+            })
+            .unwrap();
+
+        handle
+            .insert_source(wayland_source, |(), queue, state| {
+                if state.need_roundtrip {
+                    state.need_roundtrip = false;
+                    queue.roundtrip(state)
+                } else {
+                    queue.dispatch_pending(state)
+                }
+            })
+            .unwrap();
+
+        // NOTE(hack3rmann): wayland events must be processed before SlintEvents to initialize the
+        // backend properly
+        handle
+            .insert_source(window_receiver, |event, (), _| match event {
+                ChannelEvent::Msg(event) => self.handle_wayland_event(event),
+                ChannelEvent::Closed => {}
+            })
+            .unwrap();
+
+        handle
+            .insert_source(event_receiver, |event, (), state| match event {
+                ChannelEvent::Msg(event) => self.handle_slint_event(event, state),
+                ChannelEvent::Closed => {}
+            })
+            .unwrap();
+    }
+
+    pub fn run_loop_iteration(&self, _state: &mut ClientState) {
+        slint::platform::update_timers_and_animations();
+
+        let mut pending = self.pending_rendering.lock().unwrap();
+
+        if pending.is_empty() {
+            return;
+        }
+
+        let adapters = self.adapters.lock().unwrap();
+
+        for adapter in adapters
+            .iter()
+            .filter(|a| pending.contains(&a.surface.id()))
+        {
+            adapter.renderer.render().unwrap();
+        }
+
+        pending.clear();
+    }
 }
 
 impl Platform for WaylandPlatform {
@@ -162,110 +300,7 @@ impl Platform for WaylandPlatform {
         let mut event_loop = EventLoop::<ClientState>::try_new().unwrap();
         let handle = event_loop.handle();
 
-        let event_receiver = self
-            .slint_event_channel
-            .take_receiver()
-            .expect("event receiver should not be taken");
-
-        let window_receiver = {
-            let state = self.wayland.client_state.lock().unwrap();
-            let state = state.as_ref().unwrap();
-
-            state
-                .event_channel
-                .take_receiver()
-                .expect("wayland event receiver should not be taken")
-        };
-
-        let event_queue = {
-            let mut lock = self.wayland.event_queue.lock().unwrap();
-            lock.take().expect("event should not be taken")
-        };
-
-        let wayland_source = WaylandSource::new(self.wayland.connection.clone(), event_queue);
-
-        let system_source = system::get()
-            .channel()
-            .take_receiver()
-            .expect("event should not be taken");
-
-        // TODO(hack3rmann): handle different refresh rates
-        let frame_time = Duration::from_secs_f32(1.0 / 60.0);
-
-        handle
-            .insert_source(Timer::from_duration(frame_time), move |_, _, _| {
-                TimeoutAction::ToDuration(frame_time)
-            })
-            .unwrap();
-
-        handle
-            .insert_source(system_source, |event, (), state| match event {
-                ChannelEvent::Msg(SystemEvent::ExclusiveZoneChanged(zone)) => {
-                    let states = self.shared_state.surface_states.read().unwrap();
-
-                    // TODO(hack3rmann): match the exclusive zone to the source surface
-                    for surface_state in states.values() {
-                        surface_state.set_exclusive_zone(&state.compositor_state, zone);
-                        surface_state.layer.commit();
-                    }
-                }
-                ChannelEvent::Closed => {}
-            })
-            .unwrap();
-
-        handle
-            .insert_source(wayland_source, |(), queue, state| {
-                if state.need_roundtrip {
-                    state.need_roundtrip = false;
-                    queue.roundtrip(state)
-                } else {
-                    queue.dispatch_pending(state)
-                }
-            })
-            .unwrap();
-
-        // NOTE(hack3rmann): wayland events must be processed before SlintEvents to initialize the
-        // backend properly
-        handle
-            .insert_source(window_receiver, |event, (), _| match event {
-                ChannelEvent::Msg(event) => self.handle_wayland_event(event),
-                ChannelEvent::Closed => {}
-            })
-            .unwrap();
-
-        handle
-            .insert_source(event_receiver, |event, (), state| match event {
-                ChannelEvent::Msg(SlintEvent::Fn(SlintFnEvent(callback))) => callback(),
-                ChannelEvent::Msg(SlintEvent::Quit) => {
-                    if let Some(signal) = &state.exit_signal {
-                        signal.stop();
-                    }
-                }
-                ChannelEvent::Msg(SlintEvent::RedrawRequested { surface_id }) => {
-                    let mut pending = self.pending_rendering.lock().unwrap();
-                    pending.insert(surface_id);
-                }
-                ChannelEvent::Msg(SlintEvent::SetWindowSize { surface_id, size }) => {
-                    let states = self.shared_state.surface_states.read().unwrap();
-
-                    let Some(state) = states.get(&surface_id) else {
-                        return;
-                    };
-
-                    let size = match size {
-                        WindowSize::Physical(physical_size) => physical_size,
-                        WindowSize::Logical(logical_size) => {
-                            logical_size.to_physical(scaling::get())
-                        }
-                    };
-
-                    state.layer.set_size(size.width, size.height);
-                    state.layer.commit();
-                }
-                ChannelEvent::Msg(SlintEvent::UpdateWindowLayoutConstraints { .. }) => {}
-                ChannelEvent::Closed => {}
-            })
-            .unwrap();
+        self.insert_event_sources(&handle);
 
         let mut client_state = {
             let mut client_state = self.wayland.client_state.lock().unwrap();
@@ -275,25 +310,8 @@ impl Platform for WaylandPlatform {
         const TIMEOUT: Duration = Duration::from_millis(10_000);
 
         event_loop
-            .run(TIMEOUT, &mut client_state, |_| {
-                slint::platform::update_timers_and_animations();
-
-                let mut pending = self.pending_rendering.lock().unwrap();
-
-                if pending.is_empty() {
-                    return;
-                }
-
-                let adapters = self.adapters.lock().unwrap();
-
-                for adapter in adapters
-                    .iter()
-                    .filter(|a| pending.contains(&a.surface.id()))
-                {
-                    adapter.renderer.render().unwrap();
-                }
-
-                pending.clear();
+            .run(TIMEOUT, &mut client_state, |state| {
+                self.run_loop_iteration(state);
             })
             .map_err(|_| PlatformError::NoEventLoopProvider)
     }
