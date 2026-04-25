@@ -79,7 +79,7 @@ impl SurfaceState {
     pub fn set_exclusive_zone(&self, compositor: &CompositorState, zone: i32) {
         let region = Region::new(compositor).unwrap();
 
-        region.add(0, 0, 2520, zone);
+        region.add(0, 0, self.size.width as i32, zone);
 
         self.layer.set_input_region(Some(region.wl_region()));
         self.layer.set_exclusive_zone(zone);
