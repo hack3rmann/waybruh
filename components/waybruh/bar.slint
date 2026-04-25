@@ -3,7 +3,7 @@ import { System } from "globals.slint";
 export component Bar inherits Window {
     title: "Waybruh";
     background: transparent;
-    in-out property <length> exclusive-zone: 25px;
+    in-out property <length> exclusive-zone: 15px;
 
     changed exclusive-zone => {
         if (self.exclusive-zone < 0) {

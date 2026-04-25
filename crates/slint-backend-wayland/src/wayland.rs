@@ -493,7 +493,7 @@ impl HasWindowHandle for SurfaceBundle {
 pub mod defaults {
     use super::*;
 
-    pub const EXCLUSIVE_ZONE: i32 = 25;
+    pub const EXCLUSIVE_ZONE: i32 = 15;
 
     pub fn get_zone() -> i32 {
         let zone = match instance::get_property("exclusive-zone") {
