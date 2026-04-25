@@ -27,7 +27,6 @@ use smithay_client_toolkit::{
     shell::WaylandSurface,
 };
 use std::{
-    cell::Cell,
     collections::{HashMap, HashSet},
     fmt::{self, Debug},
     rc::Rc,
@@ -62,7 +61,6 @@ pub struct WaylandPlatform {
     slint_event_channel: ChannelWrapper<SlintEvent>,
     adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
     shared_state: Arc<PlatformSharedState>,
-    is_event_loop_initialized: Cell<bool>,
     pending_rendering: Mutex<HashSet<ObjectId>>,
 }
 
@@ -130,22 +128,6 @@ impl WaylandPlatform {
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        if !self.is_event_loop_initialized.get() {
-            let state = self.wayland.client_state.lock().unwrap();
-            let state = state
-                .as_ref()
-                .expect("client state should not be taken before event loop initialization");
-
-            let receiver = state.event_channel.receiver();
-            let receiver = receiver.as_ref().expect(
-                "wayland event receiver should not be taken before event loop initialization",
-            );
-
-            while let Ok(event) = receiver.try_recv() {
-                self.handle_wayland_event(event);
-            }
-        }
-
         let output = {
             let mut outputs = self.shared_state.pending_outputs.write().unwrap();
             outputs.pop().expect("no outputs left")
@@ -247,6 +229,15 @@ impl Platform for WaylandPlatform {
             })
             .unwrap();
 
+        // NOTE(hack3rmann): wayland events must be processed before SlintEvents to initialize the
+        // backend properly
+        handle
+            .insert_source(window_receiver, |event, (), _| match event {
+                ChannelEvent::Msg(event) => self.handle_wayland_event(event),
+                ChannelEvent::Closed => {}
+            })
+            .unwrap();
+
         handle
             .insert_source(event_receiver, |event, (), state| match event {
                 ChannelEvent::Msg(SlintEvent::Fn(callback)) => callback(),
@@ -278,15 +269,6 @@ impl Platform for WaylandPlatform {
                 ChannelEvent::Closed => {}
             })
             .unwrap();
-
-        handle
-            .insert_source(window_receiver, |event, (), _| match event {
-                ChannelEvent::Msg(event) => self.handle_wayland_event(event),
-                ChannelEvent::Closed => {}
-            })
-            .unwrap();
-
-        self.is_event_loop_initialized.set(true);
 
         let mut client_state = {
             let mut client_state = self.wayland.client_state.lock().unwrap();

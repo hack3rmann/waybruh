@@ -1,4 +1,4 @@
-use crate::{ChannelWrapper, scaling};
+use crate::{ChannelWrapper, instance, scaling};
 use calloop::LoopSignal;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
@@ -275,16 +275,20 @@ impl OutputHandler for ClientState {
     }
 
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
+        let output_id = output.id();
+
         self.event_channel
             .send(WaylandEvent::Output(OutputEvent::Added(output)))
             .unwrap();
 
-        slint::invoke_from_event_loop(crate::instance::show).unwrap();
+        slint::invoke_from_event_loop(move || instance::show(output_id)).unwrap();
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: WlOutput) {}
 
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
+        instance::remove(&output.id());
+
         self.event_channel
             .send(WaylandEvent::Output(OutputEvent::Removed(output)))
             .unwrap();
@@ -448,7 +452,6 @@ pub struct WaylandInner {
     pub windows: HashMap<ObjectId, Arc<SurfaceBundle>>,
     // TODO(hack3rmann): move the state out of this
     pub client_state: Mutex<Option<ClientState>>,
-    pub startup_outputs: Mutex<Vec<WlOutput>>,
 }
 
 impl WaylandInner {
@@ -532,8 +535,6 @@ impl WaylandInner {
             })
             .collect();
 
-        let outputs = state.output_state.outputs().collect();
-
         event_queue.roundtrip(&mut state).unwrap();
 
         Self {
@@ -542,7 +543,6 @@ impl WaylandInner {
             layer_shell,
             windows,
             client_state: Mutex::new(Some(state)),
-            startup_outputs: Mutex::new(outputs),
         }
     }
 
