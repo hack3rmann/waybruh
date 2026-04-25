@@ -125,6 +125,7 @@ impl WaylandPlatform {
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
+        dbg!("create_window_adapter");
         if !self.is_event_loop_initialized.get() {
             let state = self.wayland.client_state.lock().unwrap();
             let state = state
@@ -184,6 +185,7 @@ impl Platform for WaylandPlatform {
     }
 
     fn run_event_loop(&self) -> Result<(), PlatformError> {
+        dbg!("run_event_loop");
         let mut event_loop = EventLoop::<ClientState>::try_new().unwrap();
         let handle = event_loop.handle();
 
@@ -241,21 +243,7 @@ impl Platform for WaylandPlatform {
 
                     state.layer.set_size(size.width, size.height);
                 }
-                ChannelEvent::Msg(SlintEvent::UpdateWindowLayoutConstraints {
-                    surface_id,
-                    contraints,
-                }) => {
-                    let Some(state) = state.surface_state.get(&surface_id) else {
-                        return;
-                    };
-
-                    let size = PhysicalSize {
-                        width: state.size.width,
-                        ..contraints.preferred.to_physical(scaling::get())
-                    };
-
-                    state.layer.set_size(size.width, size.height);
-                }
+                ChannelEvent::Msg(SlintEvent::UpdateWindowLayoutConstraints { .. }) => {}
                 ChannelEvent::Closed => {}
             })
             .unwrap();

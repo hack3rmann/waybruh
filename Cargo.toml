@@ -21,7 +21,25 @@ repository = "https://www.github.com/hack3rmann/waybruh"
 slint-backend-wayland = { path = "crates/slint-backend-wayland" }
 waybruh-ui = { path = "crates/waybruh-ui" }
 waybruh-ui-macros = { path = "crates/waybruh-ui-macros" }
-slint = { version = "1.15.1", default-features = false, features = ["compat-1-2"] }
-i-slint-renderer-skia = { version = "1.15.1", default-features = false, features = ["unstable-wgpu-28"] }
-slint-interpreter = { version = "1.16.0", features = ["display-diagnostics"] }
 thiserror = "2.0.18"
+
+[workspace.dependencies.slint]
+rev = "80cd2be28c6eb93a9aff794b68bb1b6dfea1a26b"
+git = "https://github.com/hack3rmann/slint.git"
+version = "1.17.0"
+default-features = false
+features = ["compat-1-2"]
+
+[workspace.dependencies.i-slint-renderer-skia]
+rev = "80cd2be28c6eb93a9aff794b68bb1b6dfea1a26b"
+git = "https://github.com/hack3rmann/slint.git"
+version = "1.17.0"
+default-features = false
+features = ["unstable-wgpu-28"]
+
+[workspace.dependencies.slint-interpreter]
+rev = "80cd2be28c6eb93a9aff794b68bb1b6dfea1a26b"
+git = "https://github.com/hack3rmann/slint.git"
+version = "1.17.0"
+default-features = false
+features = ["display-diagnostics", "compat-1-2"]

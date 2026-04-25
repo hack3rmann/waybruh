@@ -5,12 +5,8 @@ use raw_window_handle::{
     RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle, WindowHandle,
 };
 use slint::{
-    LogicalSize, PhysicalPosition, PhysicalSize,
+    PhysicalPosition, PhysicalSize,
     platform::{PointerEventButton, WindowEvent},
-};
-use smithay_client_toolkit::{
-    compositor::CompositorHandler, delegate_compositor, delegate_shm,
-    reexports::client::protocol::wl_output::Transform, shell::wlr_layer::Anchor,
 };
 use smithay_client_toolkit::{
     compositor::CompositorState,
@@ -37,6 +33,12 @@ use smithay_client_toolkit::{
         },
     },
     shm::{Shm, ShmHandler},
+};
+use smithay_client_toolkit::{
+    compositor::{CompositorHandler, Region},
+    delegate_compositor, delegate_shm,
+    reexports::client::protocol::wl_output::Transform,
+    shell::wlr_layer::Anchor,
 };
 use std::{
     collections::HashMap,
@@ -244,8 +246,8 @@ impl LayerShellHandler for ClientState {
     ) {
         let surface_id = layer_surface.wl_surface().id();
 
-        layer_surface.set_exclusive_zone(height as i32);
         layer_surface.set_anchor(Anchor::TOP);
+        layer_surface.set_exclusive_zone(50);
 
         self.set_surface_size(surface_id, PhysicalSize { width, height });
     }
@@ -421,6 +423,10 @@ impl HasWindowHandle for SurfaceBundle {
     }
 }
 
+pub mod defaults {
+    pub const EXCLUSIVE_ZONE: i32 = 50;
+}
+
 pub struct WaylandInner {
     pub connection: Connection,
     pub event_queue: Mutex<Option<EventQueue<ClientState>>>,
@@ -447,6 +453,8 @@ impl WaylandInner {
         let output_state = OutputState::new(&globals, &qh);
         let seat_state = SeatState::new(&globals, &qh);
 
+        dbg!(std::thread::current().id());
+
         let mut client_state = ClientState::new(output_state, registry_state, seat_state, shm);
 
         event_queue.roundtrip(&mut client_state).unwrap();
@@ -461,31 +469,30 @@ impl WaylandInner {
                 let layer = layer_shell.create_layer_surface::<ClientState>(
                     &qh,
                     surface.clone(),
-                    Layer::Bottom,
+                    Layer::Top,
                     Some("waybruh"),
                     Some(&output),
                 );
 
-                let (output_width, _) = client_state
+                let (output_width, output_height) = client_state
                     .output_state
                     .info(&output)
                     .unwrap()
                     .logical_size
                     .unwrap();
 
-                let mut size = LogicalSize {
-                    width: 0.0,
-                    height: 25.0,
-                }
-                .to_physical(scaling::get());
-
-                size = PhysicalSize {
+                let size = PhysicalSize {
                     width: output_width as u32,
-                    ..size
+                    height: output_height as u32,
                 };
 
-                layer.set_exclusive_zone(0);
-                layer.set_anchor(WlrAnchor::all());
+                let input_region = Region::new(&compositor_state).unwrap();
+
+                input_region.add(0, 0, output_width, defaults::EXCLUSIVE_ZONE);
+
+                layer.set_input_region(Some(input_region.wl_region()));
+                layer.set_exclusive_zone(defaults::EXCLUSIVE_ZONE);
+                layer.set_anchor(WlrAnchor::TOP);
                 layer.set_margin(0, 0, 0, 0);
                 layer.set_size(size.width, size.height);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
