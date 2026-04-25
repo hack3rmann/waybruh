@@ -79,7 +79,7 @@ impl SurfaceState {
     pub fn set_exclusive_zone(&self, compositor: &CompositorState, zone: i32) {
         let region = Region::new(compositor).unwrap();
 
-        region.add(0, 0, 2520, zone);
+        region.add(0, 0, self.size.width as i32, zone);
 
         self.layer.set_input_region(Some(region.wl_region()));
         self.layer.set_exclusive_zone(zone);
@@ -212,10 +212,7 @@ impl ClientState {
 
         let input_region = Region::new(&self.compositor_state).unwrap();
 
-        let zone = match instance::get_property("exclusive-zone") {
-            Ok(Value::Number(zone)) => zone as i32,
-            _ => defaults::EXCLUSIVE_ZONE,
-        };
+        let zone = defaults::get_zone();
 
         input_region.add(0, 0, output_width, zone);
 
@@ -320,7 +317,7 @@ impl LayerShellHandler for ClientState {
         let surface_id = layer_surface.wl_surface().id();
 
         layer_surface.set_anchor(Anchor::TOP);
-        layer_surface.set_exclusive_zone(50);
+        layer_surface.set_exclusive_zone(defaults::get_zone());
 
         self.set_surface_size(surface_id, PhysicalSize { width, height });
     }
@@ -493,7 +490,18 @@ impl HasWindowHandle for SurfaceBundle {
 }
 
 pub mod defaults {
-    pub const EXCLUSIVE_ZONE: i32 = 50;
+    use super::*;
+
+    pub const EXCLUSIVE_ZONE: i32 = 25;
+
+    pub fn get_zone() -> i32 {
+        let zone = match instance::get_property("exclusive-zone") {
+            Ok(Value::Number(zone)) => zone as i32,
+            _ => defaults::EXCLUSIVE_ZONE,
+        };
+
+        (zone as f32 * scaling::get()).round() as i32
+    }
 }
 
 pub struct WaylandInner {
