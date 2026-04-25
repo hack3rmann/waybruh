@@ -1,6 +1,6 @@
 use crate::{
     channel::ChannelWrapper,
-    scaling,
+    instance, scaling,
     system::{self, SystemEvent},
     wayland::{ClientState, SurfaceState, Wayland, WaylandEvent},
     window::SlintWindowAdapter,
@@ -15,6 +15,7 @@ use slint::{
     EventLoopError, PhysicalSize, PlatformError, WindowSize,
     platform::{EventLoopProxy, LayoutConstraints, Platform, WindowAdapter, WindowEvent},
 };
+use slint_interpreter::Value;
 use smithay_client_toolkit::{
     reexports::{
         calloop_wayland_source::WaylandSource,
@@ -230,6 +231,17 @@ impl WaylandPlatform {
             .unwrap();
     }
 
+    pub fn run_initial_setup(&self, state: &mut ClientState) {
+        for output in state.output_state.outputs() {
+            instance::show(output.id());
+        }
+
+        if let Ok(Value::Number(zone)) = instance::get_property("exclusive-zone") {
+            let zone = (zone * scaling::get() as f64).round() as i32;
+            self.handle_system_event(SystemEvent::ExclusiveZoneChanged(zone), state);
+        }
+    }
+
     pub fn run_loop_iteration(&self, _state: &mut ClientState) {
         slint::platform::update_timers_and_animations();
 
@@ -306,6 +318,8 @@ impl Platform for WaylandPlatform {
             let mut client_state = self.wayland.client_state.lock().unwrap();
             client_state.take().unwrap()
         };
+
+        self.run_initial_setup(&mut client_state);
 
         const TIMEOUT: Duration = Duration::from_millis(10_000);
 
