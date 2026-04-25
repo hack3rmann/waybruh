@@ -1,5 +1,17 @@
+import { System } from "globals.slint";
+
 export component Bar inherits Window {
     title: "Waybruh";
     background: transparent;
+
     in-out property <length> exclusive-zone: 25px;
+
+    changed exclusive-zone => {
+        if (self.exclusive-zone < 0) {
+            self.exclusive-zone = 0px;
+        } else {
+            // changed callback will run twice here
+            System.exclusive-zone-changed(self.exclusive-zone);
+        }
+    };
 }

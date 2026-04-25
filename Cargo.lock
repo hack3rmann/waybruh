@@ -4373,6 +4373,7 @@ name = "waybruh-ui"
 version = "0.1.0"
 dependencies = [
  "slint",
+ "slint-backend-wayland",
  "slint-interpreter",
  "thiserror 2.0.18",
  "waybruh-ui-macros",

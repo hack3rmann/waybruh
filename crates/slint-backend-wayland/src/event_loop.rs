@@ -1,6 +1,7 @@
 use crate::{
     channel::ChannelWrapper,
     scaling,
+    system::{self, SystemEvent},
     wayland::{ClientState, OutputEvent, SurfaceState, Wayland, WaylandEvent},
     window::SlintWindowAdapter,
 };
@@ -13,13 +14,16 @@ use slint::{
     EventLoopError, PhysicalSize, PlatformError, WindowSize,
     platform::{EventLoopProxy, LayoutConstraints, Platform, WindowAdapter, WindowEvent},
 };
-use smithay_client_toolkit::reexports::{
-    calloop_wayland_source::WaylandSource,
-    client::{
-        Proxy as _,
-        backend::ObjectId,
-        protocol::{wl_output::WlOutput, wl_surface::WlSurface},
+use smithay_client_toolkit::{
+    reexports::{
+        calloop_wayland_source::WaylandSource,
+        client::{
+            Proxy as _,
+            backend::ObjectId,
+            protocol::{wl_output::WlOutput, wl_surface::WlSurface},
+        },
     },
+    shell::WaylandSurface,
 };
 use std::{
     cell::Cell,
@@ -125,7 +129,6 @@ impl WaylandPlatform {
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        dbg!("create_window_adapter");
         if !self.is_event_loop_initialized.get() {
             let state = self.wayland.client_state.lock().unwrap();
             let state = state
@@ -155,7 +158,7 @@ impl Platform for WaylandPlatform {
             self.wayland.clone(),
             surface,
             output,
-            self.slint_event_channel.sender(),
+            self.slint_event_channel.make_sender(),
             &SkiaSharedContext::default(),
         );
 
@@ -185,7 +188,6 @@ impl Platform for WaylandPlatform {
     }
 
     fn run_event_loop(&self) -> Result<(), PlatformError> {
-        dbg!("run_event_loop");
         let mut event_loop = EventLoop::<ClientState>::try_new().unwrap();
         let handle = event_loop.handle();
 
@@ -210,6 +212,24 @@ impl Platform for WaylandPlatform {
         };
 
         let wayland_source = WaylandSource::new(self.wayland.connection.clone(), event_queue);
+
+        let system_source = system::get()
+            .channel()
+            .take_receiver()
+            .expect("event should not be taken");
+
+        handle
+            .insert_source(system_source, |event, (), state| match event {
+                ChannelEvent::Msg(SystemEvent::ExclusiveZoneChanged(zone)) => {
+                    // TODO(hack3rmann): match the exclusive zone to the source surface
+                    for surface_state in state.surface_state.values() {
+                        surface_state.set_exclusive_zone(&state.compositor_state, zone);
+                        surface_state.layer.commit();
+                    }
+                }
+                ChannelEvent::Closed => {}
+            })
+            .unwrap();
 
         handle
             .insert_source(wayland_source, |(), queue, state| {
@@ -242,6 +262,7 @@ impl Platform for WaylandPlatform {
                     };
 
                     state.layer.set_size(size.width, size.height);
+                    state.layer.commit();
                 }
                 ChannelEvent::Msg(SlintEvent::UpdateWindowLayoutConstraints { .. }) => {}
                 ChannelEvent::Closed => {}
@@ -290,7 +311,7 @@ impl Platform for WaylandPlatform {
 
     fn new_event_loop_proxy(&self) -> Option<Box<dyn EventLoopProxy>> {
         Some(Box::new(EventLoopHandle::new(
-            self.slint_event_channel.sender(),
+            self.slint_event_channel.make_sender(),
         )))
     }
 }

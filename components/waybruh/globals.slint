@@ -11,3 +11,7 @@ export global Shell {
 export global Command {
     callback execute([string]) -> ProgramOutput;
 }
+
+export global System {
+    callback exclusive-zone-changed(length);
+}

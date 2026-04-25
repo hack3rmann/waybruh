@@ -3,14 +3,9 @@ import { Command } from "waybruh/globals.slint";
 import { Bar } from "waybruh/bar.slint";
 
 export component BruhBar inherits Bar {
-    // Windows will avoid only this part of the surface
-    exclusive-zone: 50phx;
-
     default-font-size: 12pt;
 
     VerticalLayout {
-        alignment: start;
-
         HorizontalLayout {
             // Match drawn content's height to the exclusive zone
             height <=> root.exclusive-zone;
@@ -20,7 +15,7 @@ export component BruhBar inherits Bar {
 
                 clicked => {
                     self.text = root.width / 1px;
-                    root.exclusive-zone = 100px;
+                    root.exclusive-zone += 20px;
                 }
             }
 
@@ -29,22 +24,9 @@ export component BruhBar inherits Bar {
 
                 clicked => {
                     self.text = root.height / 1px;
-                    popup.show();
+                    root.exclusive-zone -= 20px;
                 }
             }
         }
-    }
-
-    popup := PopupWindow {
-        Rectangle {
-            height: 100%;
-            width: 100%;
-            background: yellow;
-        }
-
-        x: 200px;
-        y: 200px;
-        height: 50px;
-        width: 50px;
     }
 }

@@ -5,28 +5,16 @@ use tokio::fs;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    dbg!("main: before_init");
     slint_backend_wayland::init().unwrap();
-    dbg!("main: after_init");
 
     let compiler = Compiler::default();
     let args = Args::parse();
 
-    dbg!("before prepare_main_component");
     let instance = prepare_main_component(&compiler, args.path, &args.entry).await;
-    dbg!("after prepare_main_component");
 
     slint_backend_wayland::instance::set(instance);
 
-    dbg!(std::thread::current().id());
-
-    _ = dbg!(slint_backend_wayland::instance::get_property(
-        "exclusive-zone"
-    ));
-
-    dbg!("before run_event_loop");
     slint::run_event_loop().unwrap();
-    dbg!("after run_event_loop");
 }
 
 #[derive(Parser, Debug)]
