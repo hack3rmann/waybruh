@@ -217,6 +217,8 @@ impl ClientState {
             _ => defaults::EXCLUSIVE_ZONE,
         };
 
+        let zone = (zone as f32 * scaling::DEFAULT_SCALE).round() as i32;
+
         input_region.add(0, 0, output_width, zone);
 
         layer.set_input_region(Some(input_region.wl_region()));
@@ -493,7 +495,7 @@ impl HasWindowHandle for SurfaceBundle {
 }
 
 pub mod defaults {
-    pub const EXCLUSIVE_ZONE: i32 = 50;
+    pub const EXCLUSIVE_ZONE: i32 = 25;
 }
 
 pub struct WaylandInner {
