@@ -1,9 +1,15 @@
 import { Date } from "../waybruh/globals.slint";
 
-export component Time {
-    in-out property <string> format: " %H:%M:%S";
+export enum TimeStyle {
+    Time,
+    Date,
+}
 
-    Timer {
+export component Time {
+    property <string> format: " %H:%M:%S";
+    property <TimeStyle> style: TimeStyle.Time;
+
+    timer := Timer {
         interval: 1s;
         running: true;
 
@@ -12,8 +18,24 @@ export component Time {
         }
     }
 
-    text := Text {
-        text: Date.current-time(format);
-        color: white;
+    TouchArea {
+        text := Text {
+            text: Date.current-time(format);
+            color: white;
+        }
+
+        clicked => {
+            if (style == TimeStyle.Time) {
+                style = TimeStyle.Date;
+                format = " %H:%M   %Y, %d %B, %A";
+                timer.interval = 60s;
+            } else {
+                style = TimeStyle.Time;
+                format = " %H:%M:%S";
+                timer.interval = 1s;
+            }
+
+            text.text = Date.current-time(format);
+        }
     }
 }
