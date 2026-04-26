@@ -1,25 +1,9 @@
 import { Date } from "waybruh/globals.slint";
+import { Time } from "modules/time.slint";
+import { OpaqueSeparator, DottedSeparator } from "modules/separators.slint";
 
 component Modules inherits HorizontalLayout {
     @children
-}
-
-component Time {
-    in-out property <string> format: " %H:%M:%S";
-
-    Timer {
-        interval: 1s;
-        running: true;
-
-        triggered => {
-            text.text = Date.current-time(format);
-        }
-    }
-
-    text := Text {
-        text: Date.current-time(format);
-        color: white;
-    }
 }
 
 export component ModulesLeft inherits Modules {
@@ -35,12 +19,9 @@ export component ModulesLeft inherits Modules {
 export component ModulesCenter inherits Modules {
     alignment: center;
 
-    Text {
-        text: "Modules Center | ";
-        color: white;
-    }
-    
+    DottedSeparator { }
     Time { }
+    OpaqueSeparator { }
 }
 
 export component ModulesRight inherits Modules {

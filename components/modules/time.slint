@@ -1,0 +1,19 @@
+import { Date } from "../waybruh/globals.slint";
+
+export component Time {
+    in-out property <string> format: " %H:%M:%S";
+
+    Timer {
+        interval: 1s;
+        running: true;
+
+        triggered => {
+            text.text = Date.current-time(format);
+        }
+    }
+
+    text := Text {
+        text: Date.current-time(format);
+        color: white;
+    }
+}

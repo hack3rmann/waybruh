@@ -1,0 +1,13 @@
+component Separator inherits Text {
+    color: white;
+
+    @children
+}
+
+export component OpaqueSeparator inherits Separator {
+    text: " | ";
+}
+
+export component DottedSeparator inherits Separator {
+    text: "  ";
+}
