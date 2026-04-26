@@ -15,3 +15,7 @@ export global Command {
 export global System {
     callback exclusive-zone-changed(length);
 }
+
+export global Date {
+    pure callback current-time(string) -> string;
+}
