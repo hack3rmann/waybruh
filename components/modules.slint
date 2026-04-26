@@ -5,7 +5,7 @@ component Modules inherits HorizontalLayout {
 }
 
 component Time {
-    in-out property <string> format: " {>02:h}:{>02:m}:{>02:s}";
+    in-out property <string> format: " %H:%M:%S";
 
     Timer {
         interval: 1s;

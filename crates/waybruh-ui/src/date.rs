@@ -1,6 +1,5 @@
 use crate::GlobalCallback;
-use datetime::{LocalDateTime, fmt::DateFormat};
-use locale::Time as LocaleTime;
+use chrono::Local;
 use slint::SharedString;
 use slint_interpreter::Value;
 
@@ -19,15 +18,8 @@ impl GlobalCallback for DateCurrentTime {
             panic!("value_type expected to be string");
         };
 
-        let Ok(fmt) = DateFormat::parse(format) else {
-            eprintln!("failed to parse date format");
-            return Value::String(SharedString::from("error"));
-        };
-
-        let locale = LocaleTime::load_user_locale().unwrap_or_else(|_| LocaleTime::english());
-        let now = LocalDateTime::now();
-
-        let time = fmt.format(&now, &locale);
+        let now = Local::now();
+        let time = now.format(format).to_string();
 
         Value::String(SharedString::from(time))
     }
