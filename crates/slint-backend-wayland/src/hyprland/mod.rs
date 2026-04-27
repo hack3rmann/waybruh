@@ -96,7 +96,7 @@ impl EventSource for HyprlandEventSource {
         unsafe {
             poll.register(
                 &self.conn.event_sock,
-                Interest::WRITE,
+                Interest::READ,
                 Mode::Level,
                 token_factory.token(),
             )
@@ -110,7 +110,7 @@ impl EventSource for HyprlandEventSource {
     ) -> calloop::Result<()> {
         poll.reregister(
             &self.conn.event_sock,
-            Interest::WRITE,
+            Interest::READ,
             Mode::Level,
             token_factory.token(),
         )

@@ -56,7 +56,7 @@ impl WaylandPlatform {
             HyprlandEvent::Workspace { name } => {
                 instance::set_global_property(
                     "Hyprland",
-                    "active-workspace",
+                    "active-workspace-id",
                     Value::String(SharedString::new()),
                 )
                 .unwrap();
@@ -96,9 +96,7 @@ impl WaylandPlatform {
                 )
                 .unwrap();
             }
-            event => {
-                dbg!(event);
-            }
+            _ => {}
         }
     }
 }
