@@ -1,4 +1,4 @@
-import { Date } from "waybruh/globals.slint";
+import { Date, Hyprland } from "waybruh/globals.slint";
 import { Time } from "modules/time.slint";
 import { OpaqueSeparator, DottedSeparator } from "modules/separators.slint";
 
@@ -11,7 +11,7 @@ export component ModulesLeft inherits Modules {
     padding-left: 6px;
 
     Text {
-        text: "Modules Left";
+        text <=> Hyprland.active-window-title;
         color: white;
     }
 }

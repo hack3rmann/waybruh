@@ -22,7 +22,17 @@ export global Date {
 
 export global Hyprland {
     out property <string> active-window-title;
-    out property <string> active-workspace;
+    out property <string> active-window-class;
+    out property <string> active-window-address;
+
+    out property <string> active-workspace-id;
+    out property <string> active-workspace-name;
+
+    out property <string> focused-monitor-name;
+    out property <string> focused-monitor-workspace-id;
+    out property <string> focused-monitor-workspace-name;
+
+    out property <bool> entered-fullscreen;
 }
 
 export global Niri {

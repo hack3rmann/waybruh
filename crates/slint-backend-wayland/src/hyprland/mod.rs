@@ -1,4 +1,5 @@
 pub mod event;
+pub mod event_loop;
 pub mod init;
 
 use crate::hyprland::{event::HyprlandEvent, init::HyprlandSocketPaths};
