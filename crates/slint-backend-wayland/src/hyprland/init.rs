@@ -1,13 +1,12 @@
+use rustix::{
+    io::Errno,
+    net::{self, AddressFamily, SocketAddrUnix, SocketFlags, SocketType},
+};
 use std::{
     env,
     ffi::OsString,
     os::fd::OwnedFd,
     path::{Path, PathBuf},
-};
-
-use rustix::{
-    io::Errno,
-    net::{self, AddressFamily, SocketAddrUnix, SocketFlags, SocketType},
 };
 
 #[derive(Clone, Debug, PartialEq, Default)]

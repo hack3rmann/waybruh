@@ -1,6 +1,6 @@
 use crate::{
     channel::ChannelWrapper,
-    hyprland::HyprlandConnection,
+    hyprland::{HyprlandConnection, HyprlandEventSource},
     instance, scaling,
     system::{self, SystemEvent},
     wayland::{ClientState, SurfaceState, Wayland, WaylandEvent},
@@ -191,13 +191,17 @@ impl WaylandPlatform {
         // TODO(hack3rmann): handle different refresh rates
         let frame_time = Duration::from_secs_f32(1.0 / 60.0);
 
-        let hyprland_source = HyprlandConnection::new().unwrap();
+        #[cfg(feature = "hyprland-ipc")]
+        if let Ok(hyprland_conn) = HyprlandConnection::new() {
+            let hyprland_source = HyprlandEventSource::new(hyprland_conn);
 
-        handle
-            .insert_source(hyprland_source, |event, _, _| {
-                dbg!(event);
-            })
-            .unwrap();
+            handle
+                .insert_source(hyprland_source, |event, _, _| match event {
+                    ChannelEvent::Msg(event) => drop(dbg!(event)),
+                    ChannelEvent::Closed => {}
+                })
+                .unwrap();
+        }
 
         handle
             .insert_source(Timer::from_duration(frame_time), move |_, _, _| {
