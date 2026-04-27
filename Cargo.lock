@@ -3538,6 +3538,7 @@ dependencies = [
  "i-slint-renderer-skia",
  "lazy_static",
  "raw-window-handle",
+ "rustix 1.1.4",
  "slint",
  "slint-interpreter",
  "smithay-client-toolkit",

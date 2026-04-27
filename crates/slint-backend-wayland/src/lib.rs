@@ -6,6 +6,9 @@ pub mod system;
 pub mod wayland;
 pub mod window;
 
+#[cfg(feature = "hyprland-ipc")]
+pub mod hyprland;
+
 use crate::{channel::ChannelWrapper, event_loop::WaylandPlatform};
 use slint::platform::SetPlatformError;
 

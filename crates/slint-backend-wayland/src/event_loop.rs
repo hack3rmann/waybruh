@@ -1,5 +1,6 @@
 use crate::{
     channel::ChannelWrapper,
+    hyprland::HyprlandConnection,
     instance, scaling,
     system::{self, SystemEvent},
     wayland::{ClientState, SurfaceState, Wayland, WaylandEvent},
@@ -189,6 +190,14 @@ impl WaylandPlatform {
 
         // TODO(hack3rmann): handle different refresh rates
         let frame_time = Duration::from_secs_f32(1.0 / 60.0);
+
+        let hyprland_source = HyprlandConnection::new().unwrap();
+
+        handle
+            .insert_source(hyprland_source, |event, _, _| {
+                dbg!(event);
+            })
+            .unwrap();
 
         handle
             .insert_source(Timer::from_duration(frame_time), move |_, _, _| {

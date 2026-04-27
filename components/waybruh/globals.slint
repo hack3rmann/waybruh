@@ -19,3 +19,18 @@ export global System {
 export global Date {
     pure callback current-time(string) -> string;
 }
+
+export global Hyprland {
+    out property <string> active-window-title;
+    out property <string> active-workspace;
+}
+
+export global Niri {
+    out property <string> active-window-title;
+    out property <string> active-workspace;
+}
+
+export global ActiveCompositor {
+    out property <string> active-window-title;
+    out property <string> active-workspace;
+}
