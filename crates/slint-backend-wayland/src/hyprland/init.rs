@@ -67,7 +67,7 @@ pub fn connect_socket(path: impl AsRef<Path>) -> Result<OwnedFd, Errno> {
     let sock = net::socket_with(
         AddressFamily::UNIX,
         SocketType::STREAM,
-        SocketFlags::CLOEXEC,
+        SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
         None,
     )?;
 

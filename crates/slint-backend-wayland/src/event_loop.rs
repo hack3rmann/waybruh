@@ -196,10 +196,7 @@ impl WaylandPlatform {
             let hyprland_source = HyprlandEventSource::new(hyprland_conn);
 
             handle
-                .insert_source(hyprland_source, |event, _, _| match event {
-                    ChannelEvent::Msg(event) => drop(dbg!(event)),
-                    ChannelEvent::Closed => {}
-                })
+                .insert_source(hyprland_source, |event, _, _| drop(dbg!(event)))
                 .unwrap();
         }
 
