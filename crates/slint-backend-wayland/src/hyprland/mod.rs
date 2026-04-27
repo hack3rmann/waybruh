@@ -1,6 +1,7 @@
+pub mod event;
 pub mod init;
 
-use crate::hyprland::init::HyprlandSocketPaths;
+use crate::hyprland::{event::HyprlandEvent, init::HyprlandSocketPaths};
 use calloop::{
     EventSource, Poll, PostAction, Readiness, Token, TokenFactory,
     channel::{Channel, Sender},
@@ -8,43 +9,9 @@ use calloop::{
 use rustix::io::{self, Errno};
 use std::{
     os::fd::OwnedFd,
-    str::FromStr,
     thread::{self, JoinHandle},
 };
 use thiserror::Error;
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum HyprlandEvent {
-    Workspace { name: String },
-    WorkspaceV2 { id: String, name: String },
-}
-
-impl FromStr for HyprlandEvent {
-    type Err = HyprlandEventParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (name, data) = s.split_once(">>").ok_or(HyprlandEventParseError)?;
-
-        Ok(match name {
-            "workspace" => Self::Workspace {
-                name: data.to_owned(),
-            },
-            "workspacev2" => {
-                let (id, name) = data.split_once(',').ok_or(HyprlandEventParseError)?;
-
-                Self::WorkspaceV2 {
-                    id: id.to_owned(),
-                    name: name.to_owned(),
-                }
-            }
-            _ => return Err(HyprlandEventParseError),
-        })
-    }
-}
-
-#[derive(Debug, Error)]
-#[error("failed to parse Hyprland event")]
-pub struct HyprlandEventParseError;
 
 pub struct HyprlandConnection {
     pub event_sock: OwnedFd,
