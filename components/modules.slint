@@ -10,19 +10,27 @@ export component ModulesLeft inherits Modules {
     alignment: start;
     padding-left: 6px;
 
-    property <bool> entered-fullscreen <=> Hyprland.entered-fullscreen;
+    property <string> title <=> Hyprland.active-window-title;
+    property <string> class <=> Hyprland.active-window-class;
 
-    text := Text {
-        text: "not fullscreen";
+    text_class := Text {
+        text: "";
         color: white;
     }
 
-    changed entered-fullscreen => {
-        if (entered-fullscreen) {
-            text.text = "fullscreen";
-        } else {
-            text.text = "not fullscreen";
-        }
+    DottedSeparator { }
+
+    text_title := Text {
+        text: "";
+        color: white;
+    }
+
+    changed title => {
+        text_title.text = title;
+    }
+
+    changed class => {
+        text_class.text = class;
     }
 }
 
