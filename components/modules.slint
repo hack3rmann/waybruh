@@ -1,5 +1,6 @@
-import { Date, Hyprland } from "waybruh/globals.slint";
+import { Date, Hyprland, Niri, ActiveCompositor } from "waybruh/globals.slint";
 import { Time } from "modules/time.slint";
+import { KeyboardLayout } from "modules/keyboard_layout.slint";
 import { OpaqueSeparator, DottedSeparator } from "modules/separators.slint";
 
 component Modules inherits HorizontalLayout {
@@ -10,8 +11,8 @@ export component ModulesLeft inherits Modules {
     alignment: start;
     padding-left: 6px;
 
-    property <string> title <=> Hyprland.active-window-title;
-    property <string> class <=> Hyprland.active-window-class;
+    property <string> title <=> ActiveCompositor.active-window-title;
+    property <string> class <=> ActiveCompositor.active-window-class;
 
     text_class := Text {
         text: "";
@@ -46,8 +47,5 @@ export component ModulesRight inherits Modules {
     alignment: end;
     padding-right: 6px;
 
-    Text {
-        text: "Modules Right";
-        color: white;
-    }
+    KeyboardLayout { }
 }

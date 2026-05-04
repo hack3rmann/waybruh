@@ -1,0 +1,15 @@
+import { ActiveCompositor } from "../waybruh/globals.slint";
+
+export component KeyboardLayout inherits Text {
+    property <string> active-layout <=> ActiveCompositor.active-keyboard-layout;
+
+    color: white;
+
+    changed active-layout => {
+        if active-layout == "English (US)" {
+            self.text = " us";
+        } else if active-layout == "Russian" {
+            self.text = " ru"
+        }
+    }
+}

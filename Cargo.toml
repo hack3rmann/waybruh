@@ -23,6 +23,7 @@ waybruh-ui = { path = "crates/waybruh-ui" }
 waybruh-ui-macros = { path = "crates/waybruh-ui-macros" }
 thiserror = "2.0.18"
 lazy_static = "1.5.0"
+serde = "1.0.228"
 
 [workspace.dependencies.slint]
 rev = "80cd2be28c6eb93a9aff794b68bb1b6dfea1a26b"

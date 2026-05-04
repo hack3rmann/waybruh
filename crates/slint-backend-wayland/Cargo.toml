@@ -15,7 +15,10 @@ calloop = "0.14.4"
 raw-window-handle = "0.6.2"
 lazy_static.workspace = true
 thiserror.workspace = true
+serde.workspace = true
 rustix = { version = "1.1.4", features = ["fs", "net", "process", "mm", "shm", "event"] }
+niri-ipc = { version = "=26.4.0", features = ["json-schema"], optional = true }
+serde_json = { version = "1.0.149", optional = true }
 
 [dependencies.smithay-client-toolkit]
 git = "https://github.com/hack3rmann/client-toolkit.git"
@@ -23,5 +26,6 @@ rev = "1533d54268070edd15cf718cd6c4a18e71e803eb"
 features = ["system"]
 
 [features]
-default = ["hyprland-ipc"]
+default = ["hyprland-ipc", "niri-ipc"]
 hyprland-ipc = []
+niri-ipc = ["dep:niri-ipc", "dep:serde_json"]
