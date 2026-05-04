@@ -2,6 +2,7 @@ import { Date, Hyprland, Niri, ActiveCompositor } from "waybruh/globals.slint";
 import { Time } from "modules/time.slint";
 import { KeyboardLayout } from "modules/keyboard_layout.slint";
 import { OpaqueSeparator, DottedSeparator } from "modules/separators.slint";
+import { NiriWorkspaces } from "modules/niri-workspaces.slint";
 
 component Modules inherits HorizontalLayout {
     @children
@@ -41,6 +42,7 @@ export component ModulesCenter inherits Modules {
     DottedSeparator { }
     Time { }
     OpaqueSeparator { }
+    NiriWorkspaces { }
 }
 
 export component ModulesRight inherits Modules {

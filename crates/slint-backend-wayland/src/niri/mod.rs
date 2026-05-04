@@ -2,7 +2,7 @@ pub mod event_loop;
 pub mod init;
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
-use niri_ipc::{Request, Window};
+use niri_ipc::{Request, Window, Workspace};
 use rustix::{
     io::{self, Errno},
     net::{self, RecvFlags},
@@ -45,6 +45,9 @@ pub enum NiriConnectionError {
 #[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct WindowId(pub u64);
 
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct WorkspaceId(pub u64);
+
 #[derive(Debug)]
 pub struct Niri {
     _request_sock: OwnedFd,
@@ -52,6 +55,7 @@ pub struct Niri {
     pub focused_window: Option<WindowId>,
     pub keyboard_layouts: Vec<String>,
     pub current_keyboard_layout_index: usize,
+    pub workspaces: HashMap<WorkspaceId, Workspace>,
 }
 
 #[derive(Debug)]
@@ -71,6 +75,7 @@ impl NiriEventSource {
                 focused_window: None,
                 keyboard_layouts: vec![],
                 current_keyboard_layout_index: 0,
+                workspaces: HashMap::new(),
             },
             buf: vec![0; 4096],
         }

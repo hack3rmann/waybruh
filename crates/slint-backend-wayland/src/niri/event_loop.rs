@@ -1,6 +1,6 @@
 use crate::{
     event_loop::WaylandPlatform,
-    niri::{Niri, NiriConnection, NiriEvent, NiriEventSource, WindowId},
+    niri::{Niri, NiriConnection, NiriEvent, NiriEventSource, WindowId, WorkspaceId},
     wayland::ClientState,
 };
 use calloop::LoopHandle;
@@ -20,8 +20,6 @@ impl WaylandPlatform {
     }
 
     pub fn handle_niri_event(&self, event: NiriEvent, niri: &mut Niri) {
-        dbg!(&event);
-
         match event {
             NiriEvent::WindowsChanged { windows } => {
                 if let Some(focused_id) = windows
@@ -71,6 +69,43 @@ impl WaylandPlatform {
             NiriEvent::OverviewOpenedOrClosed { is_open } => {
                 global::set_overview_opened(is_open);
             }
+            NiriEvent::WorkspacesChanged { workspaces } => {
+                niri.workspaces = workspaces
+                    .into_iter()
+                    .map(|w| (WorkspaceId(w.id), w))
+                    .collect();
+
+                global::set_workspaces(niri.workspaces.values());
+            }
+            NiriEvent::WorkspaceActivated { id, focused } => {
+                let output = niri.workspaces[&WorkspaceId(id)].output.as_deref();
+
+                if let Some(prev_id) = niri.workspaces.values().find_map(|w| {
+                    (w.output.as_deref() == output && w.is_active).then_some(WorkspaceId(w.id))
+                }) {
+                    niri.workspaces.get_mut(&prev_id).unwrap().is_active = false;
+                }
+
+                niri.workspaces.get_mut(&WorkspaceId(id)).unwrap().is_active = true;
+
+                if focused {
+                    for workspace in niri.workspaces.values_mut() {
+                        workspace.is_focused = false;
+                    }
+
+                    niri.workspaces
+                        .get_mut(&WorkspaceId(id))
+                        .unwrap()
+                        .is_focused = true;
+                }
+
+                global::set_workspaces(niri.workspaces.values());
+            }
+            NiriEvent::WorkspaceUrgencyChanged { id, urgent } => {
+                niri.workspaces.get_mut(&WorkspaceId(id)).unwrap().is_urgent = urgent;
+
+                global::set_workspaces(niri.workspaces.values());
+            }
             _ => {}
         }
     }
@@ -97,8 +132,9 @@ impl Niri {
 
 mod global {
     use crate::instance;
-    use slint::SharedString;
-    use slint_interpreter::Value;
+    use niri_ipc::Workspace;
+    use slint::{ModelRc, SharedString, VecModel};
+    use slint_interpreter::{Struct, Value};
 
     pub fn set_active_keyboard_layout(name: &str) {
         instance::set_global_property(
@@ -159,5 +195,38 @@ mod global {
             Value::String(SharedString::from(value.to_string())),
         )
         .unwrap();
+    }
+
+    pub fn set_workspaces<'w>(workspaces: impl IntoIterator<Item = &'w Workspace>) {
+        let mut workspaces = workspaces.into_iter().collect::<Vec<_>>();
+        workspaces.sort_by_key(|w| w.idx);
+        workspaces.sort_by_key(|w| w.output.as_deref());
+
+        let value = workspaces
+            .into_iter()
+            .map(|w| {
+                Value::Struct(Struct::from_iter([
+                    (
+                        "index".to_owned(),
+                        Value::String(SharedString::from(w.idx.to_string())),
+                    ),
+                    (
+                        "name".to_owned(),
+                        Value::String(SharedString::from(w.name.as_deref().unwrap_or_default())),
+                    ),
+                    (
+                        "output".to_owned(),
+                        Value::String(SharedString::from(w.output.as_deref().unwrap_or_default())),
+                    ),
+                    ("is-active".to_owned(), Value::Bool(w.is_active)),
+                    ("is-focused".to_owned(), Value::Bool(w.is_focused)),
+                    ("is-urgent".to_owned(), Value::Bool(w.is_urgent)),
+                ]))
+            })
+            .collect::<Vec<_>>();
+
+        let value = Value::Model(ModelRc::new(VecModel::from(value)));
+
+        instance::set_global_property("Niri", "workspaces", value).unwrap();
     }
 }

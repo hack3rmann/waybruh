@@ -1,0 +1,8 @@
+import { Niri } from "../waybruh/globals.slint";
+
+export component NiriWorkspaces inherits HorizontalLayout{
+    for workspace in Niri.workspaces: Text {
+        color: workspace.is-active ? white : gray;
+        text: workspace.index;
+    }
+}

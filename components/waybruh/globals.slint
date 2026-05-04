@@ -37,6 +37,15 @@ export global Hyprland {
     out property <string> active-keyboard-layout;
 }
 
+struct NiriWorkspace {
+    index: string,
+    name: string,
+    output: string,
+    is-active: bool,
+    is-focused: bool,
+    is-urgent: bool,
+}
+
 export global Niri {
     out property <string> active-window-title;
     out property <string> active-window-class;
@@ -45,6 +54,8 @@ export global Niri {
     out property <string> active-window-pid;
 
     out property <bool> overview-opened;
+
+    out property <[NiriWorkspace]> workspaces;
 }
 
 export global ActiveCompositor {
