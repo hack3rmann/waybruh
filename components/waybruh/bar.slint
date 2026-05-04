@@ -15,17 +15,13 @@ export component Bar inherits Window {
     };
 }
 
-export component BarLayout inherits VerticalLayout {
+export component BarLayout inherits Rectangle {
     in property <length> exclusive-zone;
 
-    alignment: start;
     width: 100%;
-    height: 100%;
+    height <=> root.exclusive-zone;
+    x: 0px;
+    y: 0px;
 
-    HorizontalLayout {
-        // Match drawn content's height to the exclusive zone
-        height <=> root.exclusive-zone;
-
-        @children
-    }
+    @children
 }
