@@ -1,0 +1,13 @@
+import { Button } from "std-widgets.slint";
+import { Shell } from "../waybruh/globals.slint";
+
+export component Power inherits TouchArea {
+    Text {
+        text: "⏻ ";
+        color: white;
+    }
+
+    clicked => {
+        Shell.execute("$HOME/.config/hypr/scripts/Wlogout.sh");
+    }
+}

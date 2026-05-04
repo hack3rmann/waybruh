@@ -1,0 +1,9 @@
+import { ActiveCompositor } from "../waybruh/globals.slint";
+
+export component WindowTitle inherits Text {
+    property <string> title <=> ActiveCompositor.active-window-title;
+
+    color: white;
+    text <=> title;
+    overflow: elide;
+}

@@ -3,6 +3,8 @@ import { Time } from "modules/time.slint";
 import { KeyboardLayout } from "modules/keyboard_layout.slint";
 import { OpaqueSeparator, DottedSeparator } from "modules/separators.slint";
 import { NiriWorkspaces } from "modules/niri-workspaces.slint";
+import { WindowTitle } from "modules/window-title.slint";
+import { Power } from "modules/power.slint";
 
 component Modules inherits HorizontalLayout {
     @children
@@ -11,43 +13,31 @@ component Modules inherits HorizontalLayout {
 export component ModulesLeft inherits Modules {
     alignment: start;
     padding-left: 6px;
+    spacing: 3px;
+    width: 42%;
 
-    property <string> title <=> ActiveCompositor.active-window-title;
-    property <string> class <=> ActiveCompositor.active-window-class;
-
-    text_class := Text {
-        text: "";
-        color: white;
-    }
-
-    DottedSeparator { }
-
-    text_title := Text {
-        text: "";
-        color: white;
-    }
-
-    changed title => {
-        text_title.text = title;
-    }
-
-    changed class => {
-        text_class.text = class;
-    }
+    OpaqueSeparator { }
+    WindowTitle { }
 }
 
 export component ModulesCenter inherits Modules {
     alignment: center;
+    spacing: 3px;
+    width: 25%;
 
     DottedSeparator { }
     Time { }
     OpaqueSeparator { }
     NiriWorkspaces { }
+    DottedSeparator { }
 }
 
 export component ModulesRight inherits Modules {
     alignment: end;
+    spacing: 3px;
     padding-right: 6px;
+    width: 33%;
 
     KeyboardLayout { }
+    Power { }
 }
