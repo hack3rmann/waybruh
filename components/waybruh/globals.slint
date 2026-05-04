@@ -20,6 +20,11 @@ export global Date {
     pure callback current-time(string) -> string;
 }
 
+export global String {
+    pure callback indian-to-roman(string) -> string;
+    pure callback roman-to-indian(string) -> string;
+}
+
 export global Hyprland {
     out property <string> active-window-title;
     out property <string> active-window-class;

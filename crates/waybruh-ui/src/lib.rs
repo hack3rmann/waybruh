@@ -2,9 +2,15 @@ pub mod command;
 pub mod date;
 pub mod instance_ext;
 pub mod shell;
+pub mod string;
 pub mod system;
 
-use crate::{command::CommandExecute, date::DateCurrentTime, system::SystemExclusiveZoneChanged};
+use crate::{
+    command::CommandExecute,
+    date::DateCurrentTime,
+    string::{StringIndianToRoman, StringRomanToIndian},
+    system::SystemExclusiveZoneChanged,
+};
 use slint_interpreter::{ComponentInstance, SetCallbackError, Value};
 use thiserror::Error;
 use waybruh_ui_macros::compile_exports_from;
@@ -21,6 +27,8 @@ pub fn populate_instance(instance: &ComponentInstance) -> Result<(), InitError> 
     instance.add_global_callback::<CommandExecute>()?;
     instance.add_global_callback::<SystemExclusiveZoneChanged>()?;
     instance.add_global_callback::<DateCurrentTime>()?;
+    instance.add_global_callback::<StringIndianToRoman>()?;
+    instance.add_global_callback::<StringRomanToIndian>()?;
     Ok(())
 }
 

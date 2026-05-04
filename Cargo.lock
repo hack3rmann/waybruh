@@ -3265,6 +3265,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "roman-numerals"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e09ad92f1db5d14b18d369c9dc474ba56caec21d1ff0d21085c8a44337152fbd"
+
+[[package]]
 name = "rowan"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4451,6 +4457,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "lazy_static",
+ "roman-numerals",
  "slint",
  "slint-backend-wayland",
  "slint-interpreter",

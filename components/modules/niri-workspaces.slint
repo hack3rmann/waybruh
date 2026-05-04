@@ -1,8 +1,23 @@
-import { Niri } from "../waybruh/globals.slint";
+import { Niri, String } from "../waybruh/globals.slint";
 
-export component NiriWorkspaces inherits HorizontalLayout{
-    for workspace in Niri.workspaces: Text {
-        color: workspace.is-active ? white : gray;
-        text: workspace.index;
+component Workspace inherits Rectangle {
+    in property <bool> is-active;
+    in property <string> index;
+
+    in-out property <color> active-color: whitesmoke;
+    in-out property <color> non-active-color: #6e6a86;
+
+    Text {
+        text: String.indian-to-roman(index);
+        color: is-active ? active-color : non-active-color;
+    }
+}
+
+export component NiriWorkspaces inherits HorizontalLayout {
+    spacing: 5px;
+
+    for workspace in Niri.workspaces: Workspace {
+        is-active: workspace.is-active;
+        index: workspace.index;
     }
 }
