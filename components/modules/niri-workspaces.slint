@@ -10,8 +10,14 @@ component Workspace inherits Rectangle {
     Text {
         text: String.indian-to-roman(index);
         color: is-active ? active-color : non-active-color;
+        font-size: is-active ? 9pt : 8pt;
 
         animate color { duration: 200ms; }
+        
+        animate font-size {
+            duration: 400ms;
+            easing: ease-in-out-back;
+        }
     }
 
     opacity: 0;
@@ -26,6 +32,8 @@ component Workspace inherits Rectangle {
         easing: ease-out-bounce;
     }
 
+    y: -20px;
+
     animate y {
         duration: 200ms;
         easing: ease-out-quad;
@@ -39,14 +47,13 @@ component Workspace inherits Rectangle {
 
 export component NiriWorkspaces inherits Rectangle {
     property <length> item-width: 8pt;
-    property <length> item-spacing: 8pt;
+    property <length> item-spacing: 10pt;
 
     width: Niri.workspaces.length * (item-width + item-spacing) - item-spacing;
 
     for niri-workspace[i] in Niri.workspaces: Workspace {
-        x: i * (item-width + item-spacing);
-        y: -20px;
         width: item-width;
+        x: i * (self.width + item-spacing);
 
         is-active: niri-workspace.is-active;
         index: niri-workspace.index;
