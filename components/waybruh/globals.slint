@@ -42,7 +42,8 @@ export global Hyprland {
     out property <string> active-keyboard-layout;
 }
 
-struct NiriWorkspace {
+export struct NiriWorkspace {
+    id: string,
     index: string,
     name: string,
     output: string,
@@ -61,6 +62,10 @@ export global Niri {
     out property <bool> overview-opened;
 
     out property <[NiriWorkspace]> workspaces;
+
+    // 1. type: "id" | "idx" | "name" -- type of the second argument
+    // 2. identifier: string          -- identifies the workspace (either by id, index or name, depending on the first argument)
+    callback focus-workspace(string, string);
 }
 
 export global ActiveCompositor {

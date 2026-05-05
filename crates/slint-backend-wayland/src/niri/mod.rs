@@ -6,14 +6,20 @@ use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, T
 use niri_ipc::{Request, Window, Workspace};
 use rustix::{
     io::{self, Errno},
-    net::{self, RecvFlags},
+    net::{self, RecvFlags, SendFlags},
 };
 use slint::{ModelRc, VecModel};
 use slint_interpreter::Value;
-use std::{collections::HashMap, os::fd::OwnedFd, rc::Rc, str::Utf8Error};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    os::fd::OwnedFd,
+    rc::{Rc, Weak},
+    str::Utf8Error,
+};
 use thiserror::Error;
 
-pub use niri_ipc::Event as NiriEvent;
+pub use niri_ipc::{self, Action as NiriAction, Event as NiriEvent, Request as NiriRequest};
 
 use crate::instance;
 
@@ -51,7 +57,7 @@ pub enum NiriConnectionError {
 pub struct WindowId(pub u64);
 
 pub struct Niri {
-    _request_sock: OwnedFd,
+    request_sock: OwnedFd,
     pub windows: HashMap<WindowId, Window>,
     pub focused_window: Option<WindowId>,
     pub keyboard_layouts: Vec<String>,
@@ -60,14 +66,16 @@ pub struct Niri {
     pub workspaces_model: Rc<VecModel<Value>>,
 }
 
-pub struct NiriEventSource {
-    event: OwnedFd,
-    niri: Niri,
-    buf: Vec<u8>,
+thread_local! {
+    pub static NIRI_INSTANCE: RefCell<Weak<RefCell<Niri>>> = const { RefCell::new(Weak::new()) };
 }
 
-impl NiriEventSource {
-    pub fn new(conn: NiriConnection) -> Self {
+pub fn instance() -> Option<Rc<RefCell<Niri>>> {
+    NIRI_INSTANCE.with(|i| i.borrow().upgrade())
+}
+
+impl Niri {
+    pub fn new(sock: OwnedFd) -> Self {
         let workspaces_model = Rc::<VecModel<Value>>::default();
         instance::set_global_property(
             "Niri",
@@ -77,16 +85,42 @@ impl NiriEventSource {
         .unwrap();
 
         Self {
+            request_sock: sock,
+            windows: HashMap::default(),
+            focused_window: None,
+            keyboard_layouts: vec![],
+            current_keyboard_layout_index: 0,
+            workspaces: vec![],
+            workspaces_model,
+        }
+    }
+
+    pub fn send(&self, request: NiriRequest) {
+        let mut buf = serde_json::to_string(&request).unwrap();
+        buf.push('\n');
+
+        let size = net::send(&self.request_sock, buf.as_bytes(), SendFlags::DONTWAIT).unwrap();
+        assert_eq!(size, buf.len());
+    }
+}
+
+pub struct NiriEventSource {
+    event: OwnedFd,
+    niri: Rc<RefCell<Niri>>,
+    buf: Vec<u8>,
+}
+
+impl NiriEventSource {
+    pub fn new(conn: NiriConnection) -> Self {
+        let niri = Rc::new(RefCell::new(Niri::new(conn.request)));
+
+        NIRI_INSTANCE.with(|i| {
+            *i.borrow_mut() = Rc::downgrade(&niri);
+        });
+
+        Self {
             event: conn.event,
-            niri: Niri {
-                _request_sock: conn.request,
-                windows: HashMap::default(),
-                focused_window: None,
-                keyboard_layouts: vec![],
-                current_keyboard_layout_index: 0,
-                workspaces: vec![],
-                workspaces_model,
-            },
+            niri,
             buf: vec![0; 4096],
         }
     }
@@ -122,16 +156,17 @@ impl EventSource for NiriEventSource {
         };
 
         let events_string = str::from_utf8(&self.buf[..n_bytes])?;
+        let mut niri = self.niri.borrow_mut();
 
         for event_str in events_string.split_terminator('\n') {
             let Ok(event) = serde_json::from_str::<NiriEvent>(event_str) else {
                 continue;
             };
 
-            callback(event, &mut self.niri);
+            callback(event, &mut niri);
         }
 
-        self.niri.flush_events();
+        niri.flush_events();
 
         Ok(PostAction::Continue)
     }

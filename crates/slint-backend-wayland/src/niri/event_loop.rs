@@ -225,6 +225,7 @@ mod global {
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct SlintWorkspace<'s> {
+        pub id: u64,
         pub index: usize,
         pub name: Option<&'s str>,
         pub output: Option<&'s str>,
@@ -236,6 +237,7 @@ mod global {
     impl<'s> SlintWorkspace<'s> {
         pub fn from_niri(niri: &'s Workspace) -> Self {
             Self {
+                id: niri.id,
                 index: niri.idx as usize,
                 name: niri.name.as_deref(),
                 output: niri.output.as_deref(),
@@ -247,6 +249,10 @@ mod global {
 
         pub fn to_slint(self) -> Value {
             Value::Struct(Struct::from_iter([
+                (
+                    "id".to_owned(),
+                    Value::String(SharedString::from(self.id.to_string())),
+                ),
                 (
                     "index".to_owned(),
                     Value::String(SharedString::from(self.index.to_string())),

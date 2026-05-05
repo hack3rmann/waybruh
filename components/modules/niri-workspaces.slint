@@ -1,22 +1,33 @@
-import { Niri, String } from "../waybruh/globals.slint";
+import { Niri, String, NiriWorkspace } from "../waybruh/globals.slint";
 
 component Workspace inherits Rectangle {
-    in property <bool> is-active;
-    in property <string> index;
+    in property <NiriWorkspace> data;
 
     in-out property <color> active-color: whitesmoke;
-    in-out property <color> non-active-color: #6e6a86;
+    in-out property <color> inactive-color: #6e6a86;
 
-    Text {
-        text: String.indian-to-roman(index);
-        color: is-active ? active-color : non-active-color;
-        font-size: is-active ? 9pt : 8pt;
+    in-out property <length> active-font-size: 9pt;
+    in-out property <length> inactive-font-size: 8pt;
 
-        animate color { duration: 200ms; }
-        
-        animate font-size {
-            duration: 400ms;
-            easing: ease-in-out-back;
+    TouchArea {
+        width: 100%;
+        height: 100%;
+
+        Text {
+            text: String.indian-to-roman(data.index);
+            color: data.is-active ? active-color : inactive-color;
+            font-size: data.is-active ? active-font-size : inactive-font-size;
+
+            animate color { duration: 200ms; }
+
+            animate font-size {
+                duration: 400ms;
+                easing: ease-in-out-back;
+            }
+        }
+
+        clicked => {
+            Niri.focus-workspace("id", data.id);
         }
     }
 
@@ -54,8 +65,6 @@ export component NiriWorkspaces inherits Rectangle {
     for niri-workspace[i] in Niri.workspaces: Workspace {
         width: item-width;
         x: i * (self.width + item-spacing);
-
-        is-active: niri-workspace.is-active;
-        index: niri-workspace.index;
+        data: niri-workspace;
     }
 }
