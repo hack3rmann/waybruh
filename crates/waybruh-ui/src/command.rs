@@ -1,7 +1,16 @@
-use crate::GlobalCallback;
+use crate::{Global, GlobalCallback, InitError, InstanceExt};
 use slint::Model;
-use slint_interpreter::{SharedString, Struct, Value};
-use std::process::{Command, Stdio};
+use slint_interpreter::{ComponentInstance, SharedString, Struct, Value};
+use std::process::{Command as ProcessCommand, Stdio};
+
+pub struct Command;
+
+impl Global for Command {
+    fn build(instance: &ComponentInstance) -> Result<(), InitError> {
+        instance.add_global_callback::<CommandExecute>()?;
+        Ok(())
+    }
+}
 
 pub struct CommandExecute;
 
@@ -37,7 +46,7 @@ impl GlobalCallback for CommandExecute {
             _ => panic!("arguments expected to be strings"),
         });
 
-        let child = match Command::new(program)
+        let child = match ProcessCommand::new(program)
             .args(arguments)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

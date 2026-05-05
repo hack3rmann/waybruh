@@ -1,7 +1,17 @@
-use crate::GlobalCallback;
+use crate::{Global, GlobalCallback, InitError, InstanceExt};
 use roman_numerals::{FromRoman, ToRoman};
 use slint::SharedString;
-use slint_interpreter::Value;
+use slint_interpreter::{ComponentInstance, Value};
+
+pub struct StringGlobal;
+
+impl Global for StringGlobal {
+    fn build(instance: &ComponentInstance) -> Result<(), InitError> {
+        instance.add_global_callback::<StringIndianToRoman>()?;
+        instance.add_global_callback::<StringRomanToIndian>()?;
+        Ok(())
+    }
+}
 
 pub struct StringIndianToRoman;
 

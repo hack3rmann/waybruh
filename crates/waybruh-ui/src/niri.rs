@@ -1,6 +1,19 @@
-use crate::GlobalCallback;
+use crate::{Global, GlobalCallback, InitError, InstanceExt};
+use slint::Model;
 use slint_backend_wayland::niri::{self, NiriAction, NiriRequest, niri_ipc::WorkspaceReferenceArg};
-use slint_interpreter::Value;
+use slint_interpreter::{ComponentInstance, Value};
+
+pub struct Niri;
+
+impl Global for Niri {
+    fn build(instance: &ComponentInstance) -> Result<(), InitError> {
+        instance.add_global_callback::<NiriSpawn>()?;
+        instance.add_global_callback::<NiriSpawnSh>()?;
+        instance.add_global_callback::<NiriFocusWorkspace>()?;
+
+        Ok(())
+    }
+}
 
 pub struct NiriFocusWorkspace;
 
@@ -45,6 +58,70 @@ impl GlobalCallback for NiriFocusWorkspace {
         let niri = niri.borrow();
         niri.send(NiriRequest::Action(NiriAction::FocusWorkspace {
             reference,
+        }));
+
+        Value::Void
+    }
+}
+
+pub struct NiriSpawn;
+
+impl GlobalCallback for NiriSpawn {
+    const GLOBAL_NAME: &str = "Niri";
+    const CALLBACK_NAME: &str = "spawn";
+
+    fn execute(params: &[Value]) -> Value {
+        let [param] = params else {
+            panic!("expected 2 parameters");
+        };
+
+        let Value::Model(model) = param else {
+            panic!("value_type expected to be string");
+        };
+
+        let command = model
+            .iter()
+            .flat_map(|v| match v {
+                Value::String(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .collect();
+
+        let Some(niri) = niri::instance() else {
+            return Value::Void;
+        };
+
+        let niri = niri.borrow();
+
+        niri.send(NiriRequest::Action(NiriAction::Spawn { command }));
+
+        Value::Void
+    }
+}
+
+pub struct NiriSpawnSh;
+
+impl GlobalCallback for NiriSpawnSh {
+    const GLOBAL_NAME: &str = "Niri";
+    const CALLBACK_NAME: &str = "spawn-sh";
+
+    fn execute(params: &[Value]) -> Value {
+        let [param] = params else {
+            panic!("expected 2 parameters");
+        };
+
+        let Value::String(command) = param else {
+            panic!("value_type expected to be string");
+        };
+
+        let Some(niri) = niri::instance() else {
+            return Value::Void;
+        };
+
+        let niri = niri.borrow();
+
+        niri.send(NiriRequest::Action(NiriAction::SpawnSh {
+            command: command.to_string(),
         }));
 
         Value::Void

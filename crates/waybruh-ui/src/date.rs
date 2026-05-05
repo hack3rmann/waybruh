@@ -1,7 +1,16 @@
-use crate::GlobalCallback;
+use crate::{Global, GlobalCallback, InitError, InstanceExt};
 use chrono::Local;
 use slint::SharedString;
-use slint_interpreter::Value;
+use slint_interpreter::{ComponentInstance, Value};
+
+pub struct Date;
+
+impl Global for Date {
+    fn build(instance: &ComponentInstance) -> Result<(), InitError> {
+        instance.add_global_callback::<DateCurrentTime>()?;
+        Ok(())
+    }
+}
 
 pub struct DateCurrentTime;
 

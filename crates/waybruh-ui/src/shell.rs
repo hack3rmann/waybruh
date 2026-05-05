@@ -1,6 +1,15 @@
-use crate::GlobalCallback;
-use slint_interpreter::{SharedString, Struct, Value};
+use crate::{Global, GlobalCallback, InitError, InstanceExt};
+use slint_interpreter::{ComponentInstance, SharedString, Struct, Value};
 use std::process::{Command, Stdio};
+
+pub struct Shell;
+
+impl Global for Shell {
+    fn build(instance: &ComponentInstance) -> Result<(), InitError> {
+        instance.add_global_callback::<ShellExecute>()?;
+        Ok(())
+    }
+}
 
 pub struct ShellExecute;
 

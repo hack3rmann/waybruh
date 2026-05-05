@@ -66,6 +66,12 @@ export global Niri {
     // 1. type: "id" | "idx" | "name" -- type of the second argument
     // 2. identifier: string          -- identifies the workspace (either by id, index or name, depending on the first argument)
     callback focus-workspace(string, string);
+
+    // 1. command: [string] -- command to spawn
+    callback spawn([string]);
+
+    // 1. command: string -- shell command to spawn
+    callback spawn-sh(string);
 }
 
 export global ActiveCompositor {
