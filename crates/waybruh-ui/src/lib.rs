@@ -1,10 +1,12 @@
 pub mod command;
 pub mod date;
 pub mod instance_ext;
+pub mod niri;
 pub mod shell;
+pub mod string;
 pub mod system;
 
-use crate::{command::CommandExecute, date::DateCurrentTime, system::SystemExclusiveZoneChanged};
+use crate::{command::Command, date::Date, niri::Niri, shell::Shell, string::StringGlobal};
 use slint_interpreter::{ComponentInstance, SetCallbackError, Value};
 use thiserror::Error;
 use waybruh_ui_macros::compile_exports_from;
@@ -17,10 +19,12 @@ pub const RE_EXPORTS: &str = compile_exports_from!([
 ]);
 
 pub fn populate_instance(instance: &ComponentInstance) -> Result<(), InitError> {
-    instance.add_global_callback::<ShellExecute>()?;
-    instance.add_global_callback::<CommandExecute>()?;
-    instance.add_global_callback::<SystemExclusiveZoneChanged>()?;
-    instance.add_global_callback::<DateCurrentTime>()?;
+    Shell::build(instance)?;
+    Command::build(instance)?;
+    Date::build(instance)?;
+    StringGlobal::build(instance)?;
+    Niri::build(instance)?;
+
     Ok(())
 }
 
@@ -35,4 +39,8 @@ pub trait GlobalCallback: 'static {
     const CALLBACK_NAME: &str;
 
     fn execute(params: &[Value]) -> Value;
+}
+
+pub trait Global: 'static {
+    fn build(instance: &ComponentInstance) -> Result<(), InitError>;
 }

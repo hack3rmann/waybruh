@@ -1,6 +1,15 @@
-use crate::GlobalCallback;
+use crate::{Global, GlobalCallback, InitError, InstanceExt};
 use slint_backend_wayland::{scaling, system};
-use slint_interpreter::Value;
+use slint_interpreter::{ComponentInstance, Value};
+
+pub struct System;
+
+impl Global for System {
+    fn build(instance: &ComponentInstance) -> Result<(), InitError> {
+        instance.add_global_callback::<SystemExclusiveZoneChanged>()?;
+        Ok(())
+    }
+}
 
 pub struct SystemExclusiveZoneChanged;
 

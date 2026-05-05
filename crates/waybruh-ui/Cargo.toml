@@ -15,3 +15,4 @@ slint.workspace = true
 slint-backend-wayland.workspace = true
 lazy_static.workspace = true
 chrono = "0.4.44"
+roman-numerals = "0.4.0"

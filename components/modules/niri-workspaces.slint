@@ -1,0 +1,70 @@
+import { Niri, String, NiriWorkspace } from "../waybruh/globals.slint";
+
+component Workspace inherits Rectangle {
+    in property <NiriWorkspace> data;
+
+    in-out property <color> active-color: whitesmoke;
+    in-out property <color> inactive-color: #6e6a86;
+
+    in-out property <length> active-font-size: 9pt;
+    in-out property <length> inactive-font-size: 8pt;
+
+    TouchArea {
+        width: 100%;
+        height: 100%;
+
+        Text {
+            text: String.indian-to-roman(data.index);
+            color: data.is-active ? active-color : inactive-color;
+            font-size: data.is-active ? active-font-size : inactive-font-size;
+
+            animate color { duration: 200ms; }
+
+            animate font-size {
+                duration: 400ms;
+                easing: ease-in-out-back;
+            }
+        }
+
+        clicked => {
+            Niri.focus-workspace("id", data.id);
+        }
+    }
+
+    opacity: 0;
+
+    animate opacity {
+        duration: 400ms;
+        easing: ease-in;
+    }
+
+    animate x {
+        duration: 600ms;
+        easing: ease-out-bounce;
+    }
+
+    y: -20px;
+
+    animate y {
+        duration: 200ms;
+        easing: ease-out-quad;
+    }
+
+    init => {
+        self.opacity = 1;
+        self.y = 0;
+    }
+}
+
+export component NiriWorkspaces inherits Rectangle {
+    property <length> item-width: 8pt;
+    property <length> item-spacing: 10pt;
+
+    width: Niri.workspaces.length * (item-width + item-spacing) - item-spacing;
+
+    for niri-workspace[i] in Niri.workspaces: Workspace {
+        width: item-width;
+        x: i * (self.width + item-spacing);
+        data: niri-workspace;
+    }
+}

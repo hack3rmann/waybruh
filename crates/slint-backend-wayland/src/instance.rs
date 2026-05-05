@@ -6,6 +6,12 @@ use smithay_client_toolkit::reexports::client::backend::ObjectId;
 use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
 
+#[derive(Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct GlobalEntry {
+    global: String,
+    name: String,
+}
+
 type ShowHook = Box<dyn Fn(&ComponentInstance)>;
 
 thread_local! {
@@ -16,6 +22,8 @@ thread_local! {
         = RefCell::default();
 
     static SHOW_HOOK: RefCell<Option<ShowHook>> = const { RefCell::new(None) };
+
+    static GLOBAL_PROPERTIES: RefCell<HashMap<GlobalEntry, Value>> = RefCell::default();
 }
 
 fn create_instance() -> Option<ComponentInstance> {
@@ -28,6 +36,16 @@ fn execute_show_hook(instance: &ComponentInstance) {
             hook(instance);
         }
     });
+}
+
+fn populate_global_properties(instance: &ComponentInstance) -> Result<(), SetPropertyError> {
+    GLOBAL_PROPERTIES.with_borrow(|g| {
+        for (GlobalEntry { global, name }, value) in g {
+            instance.set_global_property(global, name, value.clone())?;
+        }
+
+        Ok(())
+    })
 }
 
 pub fn set_definition(definition: ComponentDefinition) {
@@ -49,6 +67,7 @@ pub fn show(output_id: ObjectId) {
             .or_insert_with(|| create_instance().unwrap());
 
         execute_show_hook(instance);
+        populate_global_properties(instance).unwrap();
 
         instance.show().unwrap();
     });
@@ -77,6 +96,34 @@ pub fn get_property(name: &str) -> Result<Value, InstanceGetPropertyError> {
         Some(instance) => Ok(instance.get_property(name)?),
         None => Err(InstanceGetPropertyError::NoInstance),
     })
+}
+
+pub fn set_global_property(
+    global: &str,
+    name: &str,
+    value: Value,
+) -> Result<(), InstanceSetPropertyError> {
+    let result = COMPONENT_INSTANCES.with_borrow(|i| {
+        for instance in i.values() {
+            instance.set_global_property(global, name, value.clone())?;
+        }
+
+        Ok(())
+    });
+
+    if result.is_ok() {
+        GLOBAL_PROPERTIES.with_borrow_mut(|g| {
+            g.insert(
+                GlobalEntry {
+                    global: global.to_owned(),
+                    name: name.to_owned(),
+                },
+                value,
+            );
+        });
+    }
+
+    result
 }
 
 #[derive(Error, Debug)]

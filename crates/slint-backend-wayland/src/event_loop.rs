@@ -229,6 +229,16 @@ impl WaylandPlatform {
                 ChannelEvent::Closed => {}
             })
             .unwrap();
+
+        #[cfg(feature = "hyprland-ipc")]
+        {
+            self.add_hyprland_source(handle);
+        }
+
+        #[cfg(feature = "niri-ipc")]
+        {
+            self.add_niri_source(handle);
+        }
     }
 
     pub fn run_initial_setup(&self, state: &mut ClientState) {

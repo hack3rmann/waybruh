@@ -1,0 +1,21 @@
+import { ActiveCompositor, Niri } from "../waybruh/globals.slint";
+
+export component KeyboardLayout inherits TouchArea {
+    property <string> active-layout <=> ActiveCompositor.active-keyboard-layout;
+
+    t := Text {
+        color: white;
+    }
+
+    changed active-layout => {
+        if active-layout == "English (US)" {
+            t.text = " us";
+        } else if active-layout == "Russian" {
+            t.text = " ru"
+        }
+    }
+
+    clicked => {
+        Niri.switch-layout("next");
+    }
+}

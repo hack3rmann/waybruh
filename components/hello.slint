@@ -8,22 +8,25 @@ export component BruhBar inherits Bar {
     default-font-family: "JetBrainsMono Nerd Font";
 
     BarLayout {
-        VerticalLayout {
-            alignment: center;
-
-            ModulesLeft { }
+        left := ModulesLeft {
+            x: 0;
+            y: 0;
+            height <=> root.exclusive-zone;
+            width: (root.width - center.width) / 2;
         }
 
-        VerticalLayout {
-            alignment: center;
-
-            ModulesCenter { }
+        center := ModulesCenter {
+            x: (parent.width - self.width) / 2;
+            y: 0;
+            height <=> root.exclusive-zone;
+            width <=> self.preferred-width;
         }
 
-        VerticalLayout {
-            alignment: center;
-
-            ModulesRight { }
+        right := ModulesRight {
+            x: parent.width - self.width;
+            y: 0;
+            height <=> root.exclusive-zone;
+            width: (root.width - center.width) / 2;
         }
     }
 }

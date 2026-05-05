@@ -19,3 +19,73 @@ export global System {
 export global Date {
     pure callback current-time(string) -> string;
 }
+
+export global String {
+    pure callback indian-to-roman(string) -> string;
+    pure callback roman-to-indian(string) -> string;
+}
+
+export global Hyprland {
+    out property <string> active-window-title;
+    out property <string> active-window-class;
+    out property <string> active-window-address;
+
+    out property <string> active-workspace-id;
+    out property <string> active-workspace-name;
+
+    out property <string> focused-monitor-name;
+    out property <string> focused-monitor-workspace-id;
+    out property <string> focused-monitor-workspace-name;
+
+    out property <bool> entered-fullscreen;
+
+    out property <string> active-keyboard-layout;
+}
+
+export struct NiriWorkspace {
+    id: string,
+    index: string,
+    name: string,
+    output: string,
+    is-active: bool,
+    is-focused: bool,
+    is-urgent: bool,
+}
+
+export global Niri {
+    out property <string> active-window-title;
+    out property <string> active-window-class;
+    out property <string> active-workspace;
+    out property <string> active-keyboard-layout;
+    out property <string> active-window-pid;
+
+    out property <bool> overview-opened;
+
+    out property <[NiriWorkspace]> workspaces;
+
+    // 1. type: "id" | "idx" | "name" -- type of the second argument
+    // 2. identifier: string          -- identifies the workspace (either by id, index or name, depending on the first argument)
+    callback focus-workspace(string, string);
+
+    // 1. command: [string] -- command to spawn
+    callback spawn([string]);
+
+    // 1. command: string -- shell command to spawn
+    callback spawn-sh(string);
+
+    // 1. target: "next" | "prev" | "\{layout-index}" -- switches keyboard layout
+    callback switch-layout(string);
+
+    callback toggle-overview;
+    callback open-overview;
+    callback close-overview;
+
+    callback show-hotkey-overlay;
+}
+
+export global ActiveCompositor {
+    out property <string> active-window-title;
+    out property <string> active-window-class;
+    out property <string> active-workspace;
+    out property <string> active-keyboard-layout;
+}
