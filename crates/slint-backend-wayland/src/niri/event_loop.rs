@@ -1,10 +1,14 @@
 use crate::{
     event_loop::WaylandPlatform,
-    niri::{Niri, NiriConnection, NiriEvent, NiriEventSource, WindowId, WorkspaceId},
+    niri::{
+        Niri, NiriConnection, NiriEvent, NiriEventSource, WindowId,
+        event_loop::global::SlintWorkspace,
+    },
     wayland::ClientState,
 };
 use calloop::LoopHandle;
-use niri_ipc::KeyboardLayouts;
+use niri_ipc::{KeyboardLayouts, Workspace};
+use slint::Model;
 
 impl WaylandPlatform {
     pub fn add_niri_source<'h, 's: 'h>(&'s self, handle: &LoopHandle<'h, ClientState>) {
@@ -69,42 +73,61 @@ impl WaylandPlatform {
             NiriEvent::OverviewOpenedOrClosed { is_open } => {
                 global::set_overview_opened(is_open);
             }
-            NiriEvent::WorkspacesChanged { workspaces } => {
-                niri.workspaces = workspaces
-                    .into_iter()
-                    .map(|w| (WorkspaceId(w.id), w))
-                    .collect();
+            NiriEvent::WorkspacesChanged { mut workspaces } => {
+                workspaces.sort_by_key(|w| w.idx);
+                workspaces.sort_by(|lhs, rhs| lhs.output.cmp(&rhs.output));
 
-                global::set_workspaces(niri.workspaces.values());
+                global::update_workspaces(&niri.workspaces, &workspaces, &niri.workspaces_model);
+
+                niri.workspaces = workspaces;
             }
             NiriEvent::WorkspaceActivated { id, focused } => {
-                let output = niri.workspaces[&WorkspaceId(id)].output.as_deref();
+                let output = niri
+                    .workspaces
+                    .iter()
+                    .find_map(|w| (w.id == id).then(|| w.output.clone()))
+                    .expect("niri behaves sound");
 
-                if let Some(prev_id) = niri.workspaces.values().find_map(|w| {
-                    (w.output.as_deref() == output && w.is_active).then_some(WorkspaceId(w.id))
-                }) {
-                    niri.workspaces.get_mut(&prev_id).unwrap().is_active = false;
-                }
+                let update = |i: usize, workspace: &Workspace| {
+                    let value = SlintWorkspace::from_niri(workspace).to_slint();
+                    niri.workspaces_model.set_row_data(i, value);
+                };
 
-                niri.workspaces.get_mut(&WorkspaceId(id)).unwrap().is_active = true;
-
-                if focused {
-                    for workspace in niri.workspaces.values_mut() {
-                        workspace.is_focused = false;
+                for (i, workspace) in niri.workspaces.iter_mut().enumerate() {
+                    if workspace.is_active && workspace.output == output {
+                        workspace.is_active = false;
+                        update(i, workspace);
                     }
 
-                    niri.workspaces
-                        .get_mut(&WorkspaceId(id))
-                        .unwrap()
-                        .is_focused = true;
+                    if workspace.id == id {
+                        workspace.is_active = true;
+                        update(i, workspace);
+                    }
                 }
 
-                global::set_workspaces(niri.workspaces.values());
+                if focused {
+                    for (i, workspace) in niri.workspaces.iter_mut().enumerate() {
+                        if workspace.is_focused {
+                            workspace.is_focused = false;
+                            update(i, workspace);
+                        }
+
+                        if workspace.id == id {
+                            workspace.is_focused = true;
+                            update(i, workspace);
+                        }
+                    }
+                }
             }
             NiriEvent::WorkspaceUrgencyChanged { id, urgent } => {
-                niri.workspaces.get_mut(&WorkspaceId(id)).unwrap().is_urgent = urgent;
+                for (i, workspace) in niri.workspaces.iter_mut().enumerate() {
+                    if workspace.id == id {
+                        workspace.is_urgent = urgent;
 
-                global::set_workspaces(niri.workspaces.values());
+                        let value = SlintWorkspace::from_niri(workspace).to_slint();
+                        niri.workspaces_model.set_row_data(i, value);
+                    }
+                }
             }
             _ => {}
         }
@@ -131,9 +154,12 @@ impl Niri {
 }
 
 mod global {
-    use crate::instance;
+    use crate::{
+        instance,
+        niri::diff::{self, Edit},
+    };
     use niri_ipc::Workspace;
-    use slint::{ModelRc, SharedString, VecModel};
+    use slint::{Model, SharedString, VecModel};
     use slint_interpreter::{Struct, Value};
 
     pub fn set_active_keyboard_layout(name: &str) {
@@ -197,36 +223,76 @@ mod global {
         .unwrap();
     }
 
-    pub fn set_workspaces<'w>(workspaces: impl IntoIterator<Item = &'w Workspace>) {
-        let mut workspaces = workspaces.into_iter().collect::<Vec<_>>();
-        workspaces.sort_by_key(|w| w.idx);
-        workspaces.sort_by_key(|w| w.output.as_deref());
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct SlintWorkspace<'s> {
+        pub index: usize,
+        pub name: Option<&'s str>,
+        pub output: Option<&'s str>,
+        pub is_active: bool,
+        pub is_focused: bool,
+        pub is_urgent: bool,
+    }
 
-        let value = workspaces
-            .into_iter()
-            .map(|w| {
-                Value::Struct(Struct::from_iter([
-                    (
-                        "index".to_owned(),
-                        Value::String(SharedString::from(w.idx.to_string())),
-                    ),
-                    (
-                        "name".to_owned(),
-                        Value::String(SharedString::from(w.name.as_deref().unwrap_or_default())),
-                    ),
-                    (
-                        "output".to_owned(),
-                        Value::String(SharedString::from(w.output.as_deref().unwrap_or_default())),
-                    ),
-                    ("is-active".to_owned(), Value::Bool(w.is_active)),
-                    ("is-focused".to_owned(), Value::Bool(w.is_focused)),
-                    ("is-urgent".to_owned(), Value::Bool(w.is_urgent)),
-                ]))
-            })
-            .collect::<Vec<_>>();
+    impl<'s> SlintWorkspace<'s> {
+        pub fn from_niri(niri: &'s Workspace) -> Self {
+            Self {
+                index: niri.idx as usize,
+                name: niri.name.as_deref(),
+                output: niri.output.as_deref(),
+                is_active: niri.is_active,
+                is_focused: niri.is_focused,
+                is_urgent: niri.is_urgent,
+            }
+        }
 
-        let value = Value::Model(ModelRc::new(VecModel::from(value)));
+        pub fn to_slint(self) -> Value {
+            Value::Struct(Struct::from_iter([
+                (
+                    "index".to_owned(),
+                    Value::String(SharedString::from(self.index.to_string())),
+                ),
+                (
+                    "name".to_owned(),
+                    Value::String(SharedString::from(self.name.unwrap_or_default())),
+                ),
+                (
+                    "output".to_owned(),
+                    Value::String(SharedString::from(self.output.unwrap_or_default())),
+                ),
+                ("is-active".to_owned(), Value::Bool(self.is_active)),
+                ("is-focused".to_owned(), Value::Bool(self.is_focused)),
+                ("is-urgent".to_owned(), Value::Bool(self.is_urgent)),
+            ]))
+        }
+    }
 
-        instance::set_global_property("Niri", "workspaces", value).unwrap();
+    /// # Note
+    ///
+    /// Both `old_workspaces` and `new_workspaces` must be sorted first by id then by output
+    pub fn update_workspaces(
+        old_workspaces: &[Workspace],
+        new_workspaces: &[Workspace],
+        model: &VecModel<Value>,
+    ) {
+        let diff = diff::difference_by(old_workspaces, new_workspaces, |a, b| {
+            SlintWorkspace::from_niri(a) == SlintWorkspace::from_niri(b)
+        });
+
+        for (i, &diff) in diff.iter().enumerate() {
+            match diff {
+                Edit::Equal(_) => continue,
+                Edit::Insert(workspace) => {
+                    let value = SlintWorkspace::from_niri(workspace).to_slint();
+                    model.insert(i, value);
+                }
+                Edit::Remove(_) => {
+                    model.remove(i);
+                }
+                Edit::Replace(workspace) => {
+                    let value = SlintWorkspace::from_niri(workspace).to_slint();
+                    model.set_row_data(i, value);
+                }
+            }
+        }
     }
 }

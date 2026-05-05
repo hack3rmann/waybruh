@@ -1,3 +1,4 @@
+pub mod diff;
 pub mod event_loop;
 pub mod init;
 
@@ -7,10 +8,14 @@ use rustix::{
     io::{self, Errno},
     net::{self, RecvFlags},
 };
-use std::{collections::HashMap, os::fd::OwnedFd, str::Utf8Error};
+use slint::{ModelRc, VecModel};
+use slint_interpreter::Value;
+use std::{collections::HashMap, os::fd::OwnedFd, rc::Rc, str::Utf8Error};
 use thiserror::Error;
 
 pub use niri_ipc::Event as NiriEvent;
+
+use crate::instance;
 
 #[derive(Debug)]
 pub struct NiriConnection {
@@ -45,20 +50,16 @@ pub enum NiriConnectionError {
 #[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct WindowId(pub u64);
 
-#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct WorkspaceId(pub u64);
-
-#[derive(Debug)]
 pub struct Niri {
     _request_sock: OwnedFd,
     pub windows: HashMap<WindowId, Window>,
     pub focused_window: Option<WindowId>,
     pub keyboard_layouts: Vec<String>,
     pub current_keyboard_layout_index: usize,
-    pub workspaces: HashMap<WorkspaceId, Workspace>,
+    pub workspaces: Vec<Workspace>,
+    pub workspaces_model: Rc<VecModel<Value>>,
 }
 
-#[derive(Debug)]
 pub struct NiriEventSource {
     event: OwnedFd,
     niri: Niri,
@@ -67,6 +68,14 @@ pub struct NiriEventSource {
 
 impl NiriEventSource {
     pub fn new(conn: NiriConnection) -> Self {
+        let workspaces_model = Rc::<VecModel<Value>>::default();
+        instance::set_global_property(
+            "Niri",
+            "workspaces",
+            Value::Model(ModelRc::new(Rc::clone(&workspaces_model))),
+        )
+        .unwrap();
+
         Self {
             event: conn.event,
             niri: Niri {
@@ -75,7 +84,8 @@ impl NiriEventSource {
                 focused_window: None,
                 keyboard_layouts: vec![],
                 current_keyboard_layout_index: 0,
-                workspaces: HashMap::new(),
+                workspaces: vec![],
+                workspaces_model,
             },
             buf: vec![0; 4096],
         }

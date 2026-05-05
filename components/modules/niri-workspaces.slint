@@ -11,6 +11,14 @@ component Workspace inherits Rectangle {
         text: String.indian-to-roman(index);
         color: is-active ? active-color : non-active-color;
     }
+
+    opacity: 0;  
+    animate opacity { duration: 300ms; easing: ease-in; }  
+  
+    init => {  
+        // Start invisible; animate will transition to opacity: 1  
+        self.opacity = 1;  
+    }
 }
 
 export component NiriWorkspaces inherits HorizontalLayout {
