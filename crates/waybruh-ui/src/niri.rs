@@ -10,13 +10,15 @@ pub struct Niri;
 
 impl Global for Niri {
     fn build(instance: &ComponentInstance) -> Result<(), InitError> {
-        instance.add_global_callback::<NiriSpawn>()?;
-        instance.add_global_callback::<NiriSpawnSh>()?;
-        instance.add_global_callback::<NiriFocusWorkspace>()?;
-        instance.add_global_callback::<NiriSwitchLayout>()?;
-        instance.add_global_callback::<NiriToggleOverview>()?;
-        instance.add_global_callback::<NiriOpenOverview>()?;
-        instance.add_global_callback::<NiriCloseOverview>()?;
+        instance
+            .add_global_callback::<NiriSpawn>()?
+            .add_global_callback::<NiriSpawnSh>()?
+            .add_global_callback::<NiriFocusWorkspace>()?
+            .add_global_callback::<NiriSwitchLayout>()?
+            .add_global_callback::<NiriToggleOverview>()?
+            .add_global_callback::<NiriOpenOverview>()?
+            .add_global_callback::<NiriCloseOverview>()?
+            .add_global_callback::<NiriShowHotkeyOverlay>()?;
 
         Ok(())
     }
@@ -224,6 +226,25 @@ impl GlobalCallback for NiriCloseOverview {
         let niri = niri.borrow();
 
         niri.send(NiriRequest::Action(NiriAction::CloseOverview {}));
+
+        Value::Void
+    }
+}
+
+pub struct NiriShowHotkeyOverlay;
+
+impl GlobalCallback for NiriShowHotkeyOverlay {
+    const GLOBAL_NAME: &str = "Niri";
+    const CALLBACK_NAME: &str = "show-hotkey-overlay";
+
+    fn execute(_: &[Value]) -> Value {
+        let Some(niri) = niri::instance() else {
+            return Value::Void;
+        };
+
+        let niri = niri.borrow();
+
+        niri.send(NiriRequest::Action(NiriAction::ShowHotkeyOverlay {}));
 
         Value::Void
     }

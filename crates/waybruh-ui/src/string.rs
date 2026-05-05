@@ -7,8 +7,10 @@ pub struct StringGlobal;
 
 impl Global for StringGlobal {
     fn build(instance: &ComponentInstance) -> Result<(), InitError> {
-        instance.add_global_callback::<StringIndianToRoman>()?;
-        instance.add_global_callback::<StringRomanToIndian>()?;
+        instance
+            .add_global_callback::<StringIndianToRoman>()?
+            .add_global_callback::<StringRomanToIndian>()?;
+
         Ok(())
     }
 }
