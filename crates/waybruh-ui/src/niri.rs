@@ -14,6 +14,9 @@ impl Global for Niri {
         instance.add_global_callback::<NiriSpawnSh>()?;
         instance.add_global_callback::<NiriFocusWorkspace>()?;
         instance.add_global_callback::<NiriSwitchLayout>()?;
+        instance.add_global_callback::<NiriToggleOverview>()?;
+        instance.add_global_callback::<NiriOpenOverview>()?;
+        instance.add_global_callback::<NiriCloseOverview>()?;
 
         Ok(())
     }
@@ -164,6 +167,63 @@ impl GlobalCallback for NiriSwitchLayout {
         };
 
         niri.send(NiriRequest::Action(NiriAction::SwitchLayout { layout }));
+
+        Value::Void
+    }
+}
+
+pub struct NiriToggleOverview;
+
+impl GlobalCallback for NiriToggleOverview {
+    const GLOBAL_NAME: &str = "Niri";
+    const CALLBACK_NAME: &str = "toggle-overview";
+
+    fn execute(_: &[Value]) -> Value {
+        let Some(niri) = niri::instance() else {
+            return Value::Void;
+        };
+
+        let niri = niri.borrow();
+
+        niri.send(NiriRequest::Action(NiriAction::ToggleOverview {}));
+
+        Value::Void
+    }
+}
+
+pub struct NiriOpenOverview;
+
+impl GlobalCallback for NiriOpenOverview {
+    const GLOBAL_NAME: &str = "Niri";
+    const CALLBACK_NAME: &str = "open-overview";
+
+    fn execute(_: &[Value]) -> Value {
+        let Some(niri) = niri::instance() else {
+            return Value::Void;
+        };
+
+        let niri = niri.borrow();
+
+        niri.send(NiriRequest::Action(NiriAction::OpenOverview {}));
+
+        Value::Void
+    }
+}
+
+pub struct NiriCloseOverview;
+
+impl GlobalCallback for NiriCloseOverview {
+    const GLOBAL_NAME: &str = "Niri";
+    const CALLBACK_NAME: &str = "close-overview";
+
+    fn execute(_: &[Value]) -> Value {
+        let Some(niri) = niri::instance() else {
+            return Value::Void;
+        };
+
+        let niri = niri.borrow();
+
+        niri.send(NiriRequest::Action(NiriAction::CloseOverview {}));
 
         Value::Void
     }

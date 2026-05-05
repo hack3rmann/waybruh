@@ -75,6 +75,10 @@ export global Niri {
 
     // 1. target: "next" | "prev" | "\{layout-index}" -- switches keyboard layout
     callback switch-layout(string);
+
+    callback toggle-overview;
+    callback open-overview;
+    callback close-overview;
 }
 
 export global ActiveCompositor {
