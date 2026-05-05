@@ -10,22 +10,45 @@ component Workspace inherits Rectangle {
     Text {
         text: String.indian-to-roman(index);
         color: is-active ? active-color : non-active-color;
+
+        animate color { duration: 200ms; }
     }
 
-    opacity: 0;  
-    animate opacity { duration: 300ms; easing: ease-in; }  
-  
-    init => {  
-        // Start invisible; animate will transition to opacity: 1  
-        self.opacity = 1;  
+    opacity: 0;
+
+    animate opacity {
+        duration: 400ms;
+        easing: ease-in;
+    }
+
+    animate x {
+        duration: 600ms;
+        easing: ease-out-bounce;
+    }
+
+    animate y {
+        duration: 200ms;
+        easing: ease-out-quad;
+    }
+
+    init => {
+        self.opacity = 1;
+        self.y = 0;
     }
 }
 
-export component NiriWorkspaces inherits HorizontalLayout {
-    spacing: 5px;
+export component NiriWorkspaces inherits Rectangle {
+    property <length> item-width: 8pt;
+    property <length> item-spacing: 8pt;
 
-    for workspace in Niri.workspaces: Workspace {
-        is-active: workspace.is-active;
-        index: workspace.index;
+    width: Niri.workspaces.length * (item-width + item-spacing) - item-spacing;
+
+    for niri-workspace[i] in Niri.workspaces: Workspace {
+        x: i * (item-width + item-spacing);
+        y: -20px;
+        width: item-width;
+
+        is-active: niri-workspace.is-active;
+        index: niri-workspace.index;
     }
 }
