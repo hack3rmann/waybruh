@@ -72,6 +72,9 @@ export global Niri {
 
     // 1. command: string -- shell command to spawn
     callback spawn-sh(string);
+
+    // 1. target: "next" | "prev" | "\{layout-index}" -- switches keyboard layout
+    callback switch-layout(string);
 }
 
 export global ActiveCompositor {

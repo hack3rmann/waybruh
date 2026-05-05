@@ -1,6 +1,9 @@
 use crate::{Global, GlobalCallback, InitError, InstanceExt};
 use slint::Model;
-use slint_backend_wayland::niri::{self, NiriAction, NiriRequest, niri_ipc::WorkspaceReferenceArg};
+use slint_backend_wayland::niri::{
+    self, NiriAction, NiriRequest,
+    niri_ipc::{LayoutSwitchTarget, WorkspaceReferenceArg},
+};
 use slint_interpreter::{ComponentInstance, Value};
 
 pub struct Niri;
@@ -10,6 +13,7 @@ impl Global for Niri {
         instance.add_global_callback::<NiriSpawn>()?;
         instance.add_global_callback::<NiriSpawnSh>()?;
         instance.add_global_callback::<NiriFocusWorkspace>()?;
+        instance.add_global_callback::<NiriSwitchLayout>()?;
 
         Ok(())
     }
@@ -123,6 +127,43 @@ impl GlobalCallback for NiriSpawnSh {
         niri.send(NiriRequest::Action(NiriAction::SpawnSh {
             command: command.to_string(),
         }));
+
+        Value::Void
+    }
+}
+
+pub struct NiriSwitchLayout;
+
+impl GlobalCallback for NiriSwitchLayout {
+    const GLOBAL_NAME: &str = "Niri";
+    const CALLBACK_NAME: &str = "switch-layout";
+
+    fn execute(params: &[Value]) -> Value {
+        let [param] = params else {
+            panic!("expected 2 parameters");
+        };
+
+        let Value::String(target) = param else {
+            panic!("value_type expected to be string");
+        };
+
+        let Some(niri) = niri::instance() else {
+            return Value::Void;
+        };
+
+        let niri = niri.borrow();
+
+        let layout = if let Ok(index) = target.parse::<u8>() {
+            LayoutSwitchTarget::Index(index)
+        } else {
+            match target.as_str() {
+                "next" => LayoutSwitchTarget::Next,
+                "prev" => LayoutSwitchTarget::Prev,
+                _ => return Value::Void,
+            }
+        };
+
+        niri.send(NiriRequest::Action(NiriAction::SwitchLayout { layout }));
 
         Value::Void
     }
