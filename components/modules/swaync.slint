@@ -1,4 +1,4 @@
-import { Json } from "../waybruh/globals.slint";
+import { Json, String } from "../waybruh/globals.slint";
 
 export component SwayNc {
     property <string> notification-count: "0";
@@ -8,11 +8,21 @@ export component SwayNc {
         color: white;
     }
 
+    dot := Text {
+        text: " ";
+        color: red;
+        y: -2pt;
+        x: t.width - 8pt;
+
+        visible: notification-count != "0";
+    }
+
     ChildProcess {
         command: ["swaync-client", "-swb"];
 
         changed stdout-line => {
-            debug("got stdout: \{c.stdout-line}");
+            let notification-count-str = Json.query("$.text", self.stdout-line);
+            notification-count = String.unquote(notification-count-str);
         }
     }
 }

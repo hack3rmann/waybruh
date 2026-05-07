@@ -1,12 +1,15 @@
 pub mod command;
 pub mod date;
 pub mod instance_ext;
+pub mod json;
 pub mod niri;
 pub mod shell;
 pub mod string;
 pub mod system;
 
-use crate::{command::Command, date::Date, niri::Niri, shell::Shell, string::StringGlobal};
+use crate::{
+    command::Command, date::Date, json::Json, niri::Niri, shell::Shell, string::StringGlobal,
+};
 use slint_interpreter::{ComponentInstance, SetCallbackError, Value};
 use thiserror::Error;
 use waybruh_ui_macros::compile_exports_from;
@@ -19,11 +22,12 @@ pub const RE_EXPORTS: &str = compile_exports_from!([
 ]);
 
 pub fn populate_instance(instance: &ComponentInstance) -> Result<(), InitError> {
-    Shell::build(instance)?;
     Command::build(instance)?;
     Date::build(instance)?;
-    StringGlobal::build(instance)?;
+    Json::build(instance)?;
     Niri::build(instance)?;
+    Shell::build(instance)?;
+    StringGlobal::build(instance)?;
 
     Ok(())
 }

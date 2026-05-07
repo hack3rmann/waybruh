@@ -9,7 +9,8 @@ impl Global for StringGlobal {
     fn build(instance: &ComponentInstance) -> Result<(), InitError> {
         instance
             .add_global_callback::<StringIndianToRoman>()?
-            .add_global_callback::<StringRomanToIndian>()?;
+            .add_global_callback::<StringRomanToIndian>()?
+            .add_global_callback::<StringUnquote>()?;
 
         Ok(())
     }
@@ -58,5 +59,25 @@ impl GlobalCallback for StringRomanToIndian {
         };
 
         Value::String(SharedString::from(integer.to_string()))
+    }
+}
+
+pub struct StringUnquote;
+
+impl GlobalCallback for StringUnquote {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "unquote";
+
+    fn execute(params: &[Value]) -> Value {
+        let [Value::String(param)] = params else {
+            panic!("expected a single param");
+        };
+
+        if param.starts_with('"') && param.ends_with('"') && param.len() >= 2 {
+            let unquoted = &param[1..param.len() - 1];
+            Value::String(SharedString::from(unquoted))
+        } else {
+            Value::String(param.clone())
+        }
     }
 }

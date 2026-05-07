@@ -23,11 +23,14 @@ export global Date {
 export global String {
     pure callback indian-to-roman(string) -> string;
     pure callback roman-to-indian(string) -> string;
+
+    pure callback unquote(string) -> string;
 }
 
 export global Json {
     // 1. query: string -- javascript-like sequence of field access and array indexing
-    //   e.g. in `{"text": "0", "alt": "none", "tooltip": "", "class": "none"}` you do can query `text`
+    //   e.g. in `{"text": "0", "alt": "none", "tooltip": "", "class": "none"}` you do can query `$.text`
+    //   see `serde_json_path` for usage examples
     // 2. json: string -- the JSON source itself
     pure callback query(string, string) -> string;
 }
