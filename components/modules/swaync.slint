@@ -1,0 +1,18 @@
+import { Json } from "../waybruh/globals.slint";
+
+export component SwayNc {
+    property <string> notification-count: "0";
+
+    t := Text {
+        text: "\{notification-count}  ";
+        color: white;
+    }
+
+    ChildProcess {
+        command: ["swaync-client", "-swb"];
+
+        changed stdout-line => {
+            debug("got stdout: \{c.stdout-line}");
+        }
+    }
+}

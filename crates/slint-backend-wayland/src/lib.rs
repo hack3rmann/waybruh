@@ -9,6 +9,7 @@ pub mod window;
 #[cfg(feature = "hyprland-ipc")]
 pub mod hyprland;
 
+pub mod child_proc;
 #[cfg(feature = "niri-ipc")]
 pub mod niri;
 

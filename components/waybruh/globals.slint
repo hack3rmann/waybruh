@@ -25,6 +25,13 @@ export global String {
     pure callback roman-to-indian(string) -> string;
 }
 
+export global Json {
+    // 1. query: string -- javascript-like sequence of field access and array indexing
+    //   e.g. in `{"text": "0", "alt": "none", "tooltip": "", "class": "none"}` you do can query `text`
+    // 2. json: string -- the JSON source itself
+    pure callback query(string, string) -> string;
+}
+
 export global Hyprland {
     out property <string> active-window-title;
     out property <string> active-window-class;

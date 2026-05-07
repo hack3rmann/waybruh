@@ -5,6 +5,7 @@ import { OpaqueSeparator, DottedSeparator } from "modules/separators.slint";
 import { NiriWorkspaces } from "modules/niri-workspaces.slint";
 import { WindowTitle } from "modules/window-title.slint";
 import { Power } from "modules/power.slint";
+import { SwayNc } from "modules/swaync.slint";
 
 component Modules inherits HorizontalLayout {
     @children
@@ -25,6 +26,7 @@ export component ModulesCenter inherits Modules {
     spacing: 3px;
     width: 25%;
 
+    SwayNc { }
     DottedSeparator { }
     Time { }
     OpaqueSeparator { }

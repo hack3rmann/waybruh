@@ -1,5 +1,6 @@
 use crate::{
     channel::ChannelWrapper,
+    child_proc::{ChildProcessEvent, ChildProcessSource},
     instance, scaling,
     system::{self, SystemEvent},
     wayland::{ClientState, SurfaceState, Wayland, WaylandEvent},
@@ -12,7 +13,7 @@ use calloop::{
 };
 use i_slint_renderer_skia::SkiaSharedContext;
 use slint::{
-    EventLoopError, PhysicalSize, PlatformError, WindowSize,
+    EventLoopError, PhysicalSize, PlatformError, SharedString, WindowSize,
     platform::{EventLoopProxy, LayoutConstraints, Platform, WindowAdapter, WindowEvent},
 };
 use slint_interpreter::Value;
@@ -128,7 +129,12 @@ impl WaylandPlatform {
         }
     }
 
-    pub fn handle_slint_event(&self, event: SlintEvent, state: &mut ClientState) {
+    pub fn handle_slint_event<'l, 's: 'l>(
+        &'s self,
+        event: SlintEvent,
+        state: &mut ClientState,
+        loop_handle: &LoopHandle<'l, ClientState>,
+    ) {
         match event {
             SlintEvent::Fn(SlintFnEvent(callback)) => callback(),
             SlintEvent::Quit => {
@@ -156,6 +162,20 @@ impl WaylandPlatform {
                 state.layer.commit();
             }
             SlintEvent::UpdateWindowLayoutConstraints { .. } => {}
+            SlintEvent::RegisterChildProcess(SlintRegisterChildProcess {
+                command,
+                on_stdout_line,
+                on_stderr_line,
+            }) => {
+                let source = ChildProcessSource::new(&command);
+
+                loop_handle
+                    .insert_source(source, move |event, _, _| match event {
+                        ChildProcessEvent::StdoutLine(line) => on_stdout_line(line),
+                        ChildProcessEvent::StderrLine(line) => on_stderr_line(line),
+                    })
+                    .unwrap();
+            }
         }
     }
 
@@ -223,9 +243,11 @@ impl WaylandPlatform {
             })
             .unwrap();
 
+        let loop_handle = handle.clone();
+
         handle
-            .insert_source(event_receiver, |event, (), state| match event {
-                ChannelEvent::Msg(event) => self.handle_slint_event(event, state),
+            .insert_source(event_receiver, move |event, (), state| match event {
+                ChannelEvent::Msg(event) => self.handle_slint_event(event, state, &loop_handle),
                 ChannelEvent::Closed => {}
             })
             .unwrap();
@@ -355,6 +377,24 @@ impl Debug for SlintFnEvent {
     }
 }
 
+pub struct SlintRegisterChildProcess {
+    pub command: Vec<SharedString>,
+    pub on_stdout_line: Box<dyn Fn(SharedString)>,
+    pub on_stderr_line: Box<dyn Fn(SharedString)>,
+}
+
+// FIXME(hack3rmann):
+unsafe impl Send for SlintRegisterChildProcess {}
+unsafe impl Sync for SlintRegisterChildProcess {}
+
+impl Debug for SlintRegisterChildProcess {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SlintRegisterChildProcess")
+            .field("command", &self.command)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug)]
 pub enum SlintEvent {
     Fn(SlintFnEvent),
@@ -370,6 +410,7 @@ pub enum SlintEvent {
         surface_id: ObjectId,
         contraints: LayoutConstraints,
     },
+    RegisterChildProcess(SlintRegisterChildProcess),
 }
 
 #[derive(Clone)]
