@@ -1,0 +1,9 @@
+export component Cava inherits Text {
+    color: white;
+    text: c.stdout-line;
+    font-size: 8.1pt;
+
+    c := ChildProcess {
+        command: ["sh", "-c", "$HOME/.config/hypr/scripts/WaybarCava.sh"];
+    }
+}

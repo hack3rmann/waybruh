@@ -6,6 +6,7 @@ import { NiriWorkspaces } from "modules/niri-workspaces.slint";
 import { WindowTitle } from "modules/window-title.slint";
 import { Power } from "modules/power.slint";
 import { SwayNc } from "modules/swaync.slint";
+import { Cava } from "modules/cava.slint";
 
 component Modules inherits HorizontalLayout {
     @children
@@ -27,6 +28,7 @@ export component ModulesCenter inherits Modules {
     width: 25%;
 
     SwayNc { }
+    Cava { }
     DottedSeparator { }
     Time { }
     OpaqueSeparator { }
