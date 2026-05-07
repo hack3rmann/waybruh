@@ -1,20 +1,26 @@
-import { Json, String } from "../waybruh/globals.slint";
+import { Json, String, Command } from "../waybruh/globals.slint";
 
 export component SwayNc {
     property <string> notification-count: "0";
 
-    t := Text {
-        text: "\{notification-count}  ";
-        color: white;
-    }
+    TouchArea {
+        t := Text {
+            text: "\{notification-count}  ";
+            color: white;
+        }
 
-    dot := Text {
-        text: " ";
-        color: red;
-        y: -2pt;
-        x: t.width - 8pt;
+        dot := Text {
+            text: " ";
+            color: red;
+            y: -2pt;
+            x: t.width - 8pt;
 
-        visible: notification-count != "0";
+            visible: notification-count != "0";
+        }
+
+        clicked => {
+            Command.execute(["swaync-client", "-t", "-sw"])
+        }
     }
 
     ChildProcess {
