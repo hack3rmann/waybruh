@@ -26,21 +26,21 @@ lazy_static = "1.5.0"
 serde = "1.0.228"
 
 [workspace.dependencies.slint]
-rev = "6c12598611a18961e8b85c494ce77ea1ff9766d5"
+rev = "a0d787f1133a14d60477389c651c67963f15703b"
 git = "https://github.com/hack3rmann/slint.git"
 version = "1.17.0"
 default-features = false
 features = ["compat-1-2"]
 
 [workspace.dependencies.i-slint-renderer-skia]
-rev = "6c12598611a18961e8b85c494ce77ea1ff9766d5"
+rev = "a0d787f1133a14d60477389c651c67963f15703b"
 git = "https://github.com/hack3rmann/slint.git"
 version = "1.17.0"
 default-features = false
 features = ["unstable-wgpu-28"]
 
 [workspace.dependencies.slint-interpreter]
-rev = "6c12598611a18961e8b85c494ce77ea1ff9766d5"
+rev = "a0d787f1133a14d60477389c651c67963f15703b"
 git = "https://github.com/hack3rmann/slint.git"
 version = "1.17.0"
 default-features = false

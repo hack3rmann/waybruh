@@ -1,11 +1,11 @@
 use crate::{
-    event_loop::{PlatformSharedState, SlintEvent, SlintRegisterChildProcess},
+    event_loop::{PlatformSharedState, SlintEvent},
     wayland::Wayland,
 };
 use calloop::channel::Sender;
 use i_slint_renderer_skia::{SkiaRenderer, SkiaSharedContext};
 use slint::{
-    PhysicalSize, SharedString, Window, WindowSize,
+    PhysicalSize, Window, WindowSize,
     platform::{Renderer, WindowAdapter, WindowProperties},
 };
 use smithay_client_toolkit::reexports::client::{
@@ -94,23 +94,6 @@ impl WindowAdapter for SlintWindowAdapter {
                 surface_id: self.surface.id(),
                 contraints: properties.layout_constraints(),
             })
-            .unwrap();
-    }
-
-    fn register_child_process(
-        &self,
-        command: Vec<SharedString>,
-        on_stdout_line: Box<dyn Fn(SharedString)>,
-        on_stderr_line: Box<dyn Fn(SharedString)>,
-    ) {
-        self.sender
-            .send(SlintEvent::RegisterChildProcess(
-                SlintRegisterChildProcess {
-                    command,
-                    on_stdout_line,
-                    on_stderr_line,
-                },
-            ))
             .unwrap();
     }
 }
