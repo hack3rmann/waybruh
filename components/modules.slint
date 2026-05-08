@@ -7,6 +7,7 @@ import { WindowTitle } from "modules/window-title.slint";
 import { Power } from "modules/power.slint";
 import { SwayNc } from "modules/swaync.slint";
 import { Cava } from "modules/cava.slint";
+import { IdleInhibitor } from "modules/idle-inhibitor.slint";
 
 component Modules inherits HorizontalLayout {
     @children
@@ -34,6 +35,7 @@ export component ModulesCenter inherits Modules {
     OpaqueSeparator { }
     NiriWorkspaces { }
     DottedSeparator { }
+    IdleInhibitor { }
 }
 
 export component ModulesRight inherits Modules {

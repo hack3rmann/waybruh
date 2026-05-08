@@ -10,21 +10,21 @@ export component BruhBar inherits Bar {
     BarLayout {
         left := ModulesLeft {
             x: 0;
-            y: 0;
+            y: 4px;
             height <=> root.exclusive-zone;
             width: (root.width - center.width) / 2;
         }
 
         center := ModulesCenter {
             x: (parent.width - self.width) / 2;
-            y: 0;
+            y: 4px;
             height <=> root.exclusive-zone;
             width <=> self.preferred-width;
         }
 
         right := ModulesRight {
             x: parent.width - self.width;
-            y: 0;
+            y: 4px;
             height <=> root.exclusive-zone;
             width: (root.width - center.width) / 2;
         }
