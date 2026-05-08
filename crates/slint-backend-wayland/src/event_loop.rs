@@ -20,11 +20,7 @@ use slint_interpreter::Value;
 use smithay_client_toolkit::{
     reexports::{
         calloop_wayland_source::WaylandSource,
-        client::{
-            Proxy as _,
-            backend::ObjectId,
-            protocol::{wl_output::WlOutput, wl_surface::WlSurface},
-        },
+        client::{Proxy as _, backend::ObjectId, protocol::wl_surface::WlSurface},
     },
     shell::WaylandSurface,
 };
@@ -40,7 +36,6 @@ use std::{
 pub struct PlatformSharedState {
     pub windows: RwLock<HashMap<ObjectId, Arc<SurfaceState>>>,
     pub surface_states: RwLock<HashMap<ObjectId, SurfaceState>>,
-    pub pending_outputs: RwLock<Vec<WlOutput>>,
 }
 
 impl PlatformSharedState {
@@ -288,10 +283,7 @@ impl WaylandPlatform {
     }
 
     pub fn run_initial_setup(&self, state: &mut ClientState) {
-        for output in state.output_state.outputs() {
-            instance::show(output.id());
-        }
-
+        // TODO(hack3rmann): make sure exclusive-zone's being handled on monitor plug
         if let Ok(Value::Number(zone)) = instance::get_property("exclusive-zone") {
             let zone = (zone * scaling::get() as f64).round() as i32;
             self.handle_system_event(SystemEvent::ExclusiveZoneChanged(zone), state);
@@ -322,10 +314,8 @@ impl WaylandPlatform {
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        let output = {
-            let mut outputs = self.shared_state.pending_outputs.write().unwrap();
-            outputs.pop().expect("no outputs left")
-        };
+        let output =
+            instance::take_pending_output().expect("output must be pending for it to take");
 
         let surface = self.get_output_surface(&output.id()).unwrap().clone();
         let surface_id = surface.id();
