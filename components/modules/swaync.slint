@@ -1,0 +1,34 @@
+import { Json, String, Command } from "../waybruh/globals.slint";
+
+export component SwayNc {
+    property <string> notification-count: "0";
+
+    TouchArea {
+        t := Text {
+            text: "\{notification-count}  ";
+            color: white;
+        }
+
+        dot := Text {
+            text: " ";
+            color: red;
+            y: -2pt;
+            x: t.width - 8pt;
+
+            visible: notification-count != "0";
+        }
+
+        clicked => {
+            Command.execute(["swaync-client", "-t", "-sw"])
+        }
+    }
+
+    ChildProcess {
+        command: ["swaync-client", "-swb"];
+
+        changed stdout-line => {
+            let notification-count-str = Json.query("$.text", self.stdout-line);
+            notification-count = String.unquote(notification-count-str);
+        }
+    }
+}

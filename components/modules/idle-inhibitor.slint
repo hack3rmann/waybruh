@@ -1,0 +1,23 @@
+export enum IdleInhibitorState {
+    Activated,
+    Deactivated,
+}
+
+export component IdleInhibitor inherits Rectangle {
+    in-out property <IdleInhibitorState> state: IdleInhibitorState.Deactivated;
+
+    TouchArea {
+        Text {
+            color: state == IdleInhibitorState.Activated ? lime : white;
+            text: state == IdleInhibitorState.Activated ? " " : " ";
+        }
+
+        clicked => {
+            if (state == IdleInhibitorState.Activated) {
+                state = IdleInhibitorState.Deactivated;
+            } else {
+                state = IdleInhibitorState.Activated;
+            }
+        }
+    }
+}

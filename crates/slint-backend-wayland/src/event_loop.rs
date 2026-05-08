@@ -1,5 +1,6 @@
 use crate::{
     channel::ChannelWrapper,
+    child_proc::{ChildProcessEvent, ChildProcessSource},
     instance, scaling,
     system::{self, SystemEvent},
     wayland::{ClientState, SurfaceState, Wayland, WaylandEvent},
@@ -12,7 +13,7 @@ use calloop::{
 };
 use i_slint_renderer_skia::SkiaSharedContext;
 use slint::{
-    EventLoopError, PhysicalSize, PlatformError, WindowSize,
+    EventLoopError, PhysicalSize, PlatformError, SharedString, WindowSize,
     platform::{EventLoopProxy, LayoutConstraints, Platform, WindowAdapter, WindowEvent},
 };
 use slint_interpreter::Value;
@@ -57,9 +58,15 @@ impl PlatformSharedState {
     }
 }
 
+#[derive(Debug)]
+pub enum PlatformEvent {
+    RegisterChildProcess(SlintRegisterChildProcess),
+}
+
 pub struct WaylandPlatform {
     wayland: Wayland,
     slint_event_channel: ChannelWrapper<SlintEvent>,
+    platform_event_channel: ChannelWrapper<PlatformEvent>,
     adapters: Mutex<Vec<Rc<SlintWindowAdapter>>>,
     shared_state: Arc<PlatformSharedState>,
     pending_rendering: Mutex<HashSet<ObjectId>>,
@@ -73,6 +80,7 @@ impl Default for WaylandPlatform {
         Self {
             wayland: Wayland::new(slint_event_channel.make_sender(), Arc::clone(&shared_state)),
             slint_event_channel,
+            platform_event_channel: ChannelWrapper::default(),
             adapters: Mutex::default(),
             shared_state,
             pending_rendering: Mutex::default(),
@@ -159,9 +167,38 @@ impl WaylandPlatform {
         }
     }
 
+    pub fn handle_platform_event<'l, 's: 'l>(
+        &'s self,
+        event: PlatformEvent,
+        _: &mut ClientState,
+        loop_handle: &LoopHandle<'l, ClientState>,
+    ) {
+        match event {
+            PlatformEvent::RegisterChildProcess(SlintRegisterChildProcess {
+                command,
+                on_stdout_line,
+                on_stderr_line,
+            }) => {
+                let source = ChildProcessSource::new(&command);
+
+                loop_handle
+                    .insert_source(source, move |event, _, _| match event {
+                        ChildProcessEvent::StdoutLine(line) => on_stdout_line(line),
+                        ChildProcessEvent::StderrLine(line) => on_stderr_line(line),
+                    })
+                    .unwrap();
+            }
+        }
+    }
+
     pub fn insert_event_sources<'h, 's: 'h>(&'s self, handle: &LoopHandle<'h, ClientState>) {
         let event_receiver = self
             .slint_event_channel
+            .take_receiver()
+            .expect("event receiver should not be taken");
+
+        let platform_receiver = self
+            .platform_event_channel
             .take_receiver()
             .expect("event receiver should not be taken");
 
@@ -224,8 +261,17 @@ impl WaylandPlatform {
             .unwrap();
 
         handle
-            .insert_source(event_receiver, |event, (), state| match event {
+            .insert_source(event_receiver, move |event, (), state| match event {
                 ChannelEvent::Msg(event) => self.handle_slint_event(event, state),
+                ChannelEvent::Closed => {}
+            })
+            .unwrap();
+
+        let loop_handle = handle.clone();
+
+        handle
+            .insert_source(platform_receiver, move |event, (), state| match event {
+                ChannelEvent::Msg(event) => self.handle_platform_event(event, state, &loop_handle),
                 ChannelEvent::Closed => {}
             })
             .unwrap();
@@ -345,6 +391,26 @@ impl Platform for WaylandPlatform {
             self.slint_event_channel.make_sender(),
         )))
     }
+
+    fn register_child_process(
+        &self,
+        command: Vec<SharedString>,
+        on_stdout_line: Box<dyn Fn(SharedString)>,
+        on_stderr_line: Box<dyn Fn(SharedString)>,
+    ) -> Result<(), PlatformError> {
+        self.platform_event_channel
+            .sender()
+            .send(PlatformEvent::RegisterChildProcess(
+                SlintRegisterChildProcess {
+                    command,
+                    on_stdout_line,
+                    on_stderr_line,
+                },
+            ))
+            .unwrap();
+
+        Ok(())
+    }
 }
 
 pub struct SlintFnEvent(pub Box<dyn FnOnce() + Send>);
@@ -352,6 +418,20 @@ pub struct SlintFnEvent(pub Box<dyn FnOnce() + Send>);
 impl Debug for SlintFnEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("SlintFnEvent").finish_non_exhaustive()
+    }
+}
+
+pub struct SlintRegisterChildProcess {
+    pub command: Vec<SharedString>,
+    pub on_stdout_line: Box<dyn Fn(SharedString)>,
+    pub on_stderr_line: Box<dyn Fn(SharedString)>,
+}
+
+impl Debug for SlintRegisterChildProcess {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SlintRegisterChildProcess")
+            .field("command", &self.command)
+            .finish_non_exhaustive()
     }
 }
 
