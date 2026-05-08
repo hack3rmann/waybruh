@@ -128,6 +128,15 @@ impl WaylandPlatform {
                     surface_state.layer.commit();
                 }
             }
+            SystemEvent::WindowAdapterCreated => {
+                if let Ok(Value::Number(zone)) = instance::get_property("exclusive-zone") {
+                    let zone = (zone * scaling::get() as f64).round() as i32;
+                    system::get()
+                        .channel()
+                        .send(SystemEvent::ExclusiveZoneChanged(zone))
+                        .unwrap();
+                }
+            }
         }
     }
 
@@ -282,14 +291,6 @@ impl WaylandPlatform {
         }
     }
 
-    pub fn run_initial_setup(&self, state: &mut ClientState) {
-        // TODO(hack3rmann): make sure exclusive-zone's being handled on monitor plug
-        if let Ok(Value::Number(zone)) = instance::get_property("exclusive-zone") {
-            let zone = (zone * scaling::get() as f64).round() as i32;
-            self.handle_system_event(SystemEvent::ExclusiveZoneChanged(zone), state);
-        }
-    }
-
     pub fn run_loop_iteration(&self, _state: &mut ClientState) {
         slint::platform::update_timers_and_animations();
 
@@ -351,6 +352,11 @@ impl Platform for WaylandPlatform {
             surface_id,
         });
 
+        system::get()
+            .channel()
+            .send(SystemEvent::WindowAdapterCreated)
+            .unwrap();
+
         Ok(adapter)
     }
 
@@ -364,8 +370,6 @@ impl Platform for WaylandPlatform {
             let mut client_state = self.wayland.client_state.lock().unwrap();
             client_state.take().unwrap()
         };
-
-        self.run_initial_setup(&mut client_state);
 
         const TIMEOUT: Duration = Duration::from_millis(10_000);
 
