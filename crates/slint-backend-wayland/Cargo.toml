@@ -21,8 +21,8 @@ niri-ipc = { version = "=26.4.0", features = ["json-schema"], optional = true }
 serde_json = { version = "1.0.149", optional = true }
 
 [dependencies.smithay-client-toolkit]
-git = "https://github.com/hack3rmann/client-toolkit.git"
-rev = "1533d54268070edd15cf718cd6c4a18e71e803eb"
+git = "https://github.com/Smithay/client-toolkit.git"
+rev = "8f8bda230f301c5e3109b63cf5f7928d981a1242"
 features = ["system"]
 
 [features]
