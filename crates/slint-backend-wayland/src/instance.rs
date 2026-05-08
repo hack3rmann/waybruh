@@ -2,7 +2,9 @@ use slint::ComponentHandle;
 use slint_interpreter::{
     ComponentDefinition, ComponentInstance, GetPropertyError, SetPropertyError, Value,
 };
-use smithay_client_toolkit::reexports::client::backend::ObjectId;
+use smithay_client_toolkit::reexports::client::{
+    Proxy, backend::ObjectId, protocol::wl_output::WlOutput,
+};
 use std::{cell::RefCell, collections::HashMap};
 use thiserror::Error;
 
@@ -24,6 +26,8 @@ thread_local! {
     static SHOW_HOOK: RefCell<Option<ShowHook>> = const { RefCell::new(None) };
 
     static GLOBAL_PROPERTIES: RefCell<HashMap<GlobalEntry, Value>> = RefCell::default();
+
+    static PENDING_OUTPUT: RefCell<Option<WlOutput>> = const { RefCell::new(None) };
 }
 
 fn create_instance() -> Option<ComponentInstance> {
@@ -60,7 +64,19 @@ pub fn set_show_hook(hook: impl Fn(&ComponentInstance) + 'static) {
     })
 }
 
-pub fn show(output_id: ObjectId) {
+pub fn take_pending_output() -> Option<WlOutput> {
+    PENDING_OUTPUT.with_borrow_mut(Option::take)
+}
+
+pub fn show(output: WlOutput) {
+    let output_id = output.id();
+
+    PENDING_OUTPUT.with_borrow_mut(move |o| {
+        if let Some(prev_output) = o.replace(output) {
+            panic!("failed to queue pending output: {prev_output:?}, the place is already taken");
+        }
+    });
+
     COMPONENT_INSTANCES.with_borrow_mut(|i| {
         let instance = i
             .entry(output_id)
@@ -75,7 +91,9 @@ pub fn show(output_id: ObjectId) {
 
 pub fn remove(output_id: &ObjectId) {
     COMPONENT_INSTANCES.with_borrow_mut(|i| {
-        i.remove(output_id);
+        if let Some(instance) = i.remove(output_id) {
+            instance.hide().unwrap();
+        }
     });
 }
 

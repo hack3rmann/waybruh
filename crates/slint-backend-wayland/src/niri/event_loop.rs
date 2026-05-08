@@ -284,19 +284,22 @@ mod global {
             SlintWorkspace::from_niri(a) == SlintWorkspace::from_niri(b)
         });
 
+        let mut back_offset = 0_usize;
+
         for (i, &diff) in diff.iter().enumerate() {
             match diff {
                 Edit::Equal(_) => continue,
                 Edit::Insert(workspace) => {
                     let value = SlintWorkspace::from_niri(workspace).to_slint();
-                    model.insert(i, value);
+                    model.insert(i - back_offset, value);
                 }
                 Edit::Remove(_) => {
-                    model.remove(i);
+                    model.remove(i - back_offset);
+                    back_offset += 1;
                 }
                 Edit::Replace(workspace) => {
                     let value = SlintWorkspace::from_niri(workspace).to_slint();
-                    model.set_row_data(i, value);
+                    model.set_row_data(i - back_offset, value);
                 }
             }
         }

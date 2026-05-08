@@ -20,11 +20,7 @@ use slint_interpreter::Value;
 use smithay_client_toolkit::{
     reexports::{
         calloop_wayland_source::WaylandSource,
-        client::{
-            Proxy as _,
-            backend::ObjectId,
-            protocol::{wl_output::WlOutput, wl_surface::WlSurface},
-        },
+        client::{Proxy as _, backend::ObjectId, protocol::wl_surface::WlSurface},
     },
     shell::WaylandSurface,
 };
@@ -40,7 +36,6 @@ use std::{
 pub struct PlatformSharedState {
     pub windows: RwLock<HashMap<ObjectId, Arc<SurfaceState>>>,
     pub surface_states: RwLock<HashMap<ObjectId, SurfaceState>>,
-    pub pending_outputs: RwLock<Vec<WlOutput>>,
 }
 
 impl PlatformSharedState {
@@ -131,6 +126,15 @@ impl WaylandPlatform {
                 for surface_state in states.values() {
                     surface_state.set_exclusive_zone(&state.compositor_state, zone);
                     surface_state.layer.commit();
+                }
+            }
+            SystemEvent::WindowAdapterCreated => {
+                if let Ok(Value::Number(zone)) = instance::get_property("exclusive-zone") {
+                    let zone = (zone * scaling::get() as f64).round() as i32;
+                    system::get()
+                        .channel()
+                        .send(SystemEvent::ExclusiveZoneChanged(zone))
+                        .unwrap();
                 }
             }
         }
@@ -287,17 +291,6 @@ impl WaylandPlatform {
         }
     }
 
-    pub fn run_initial_setup(&self, state: &mut ClientState) {
-        for output in state.output_state.outputs() {
-            instance::show(output.id());
-        }
-
-        if let Ok(Value::Number(zone)) = instance::get_property("exclusive-zone") {
-            let zone = (zone * scaling::get() as f64).round() as i32;
-            self.handle_system_event(SystemEvent::ExclusiveZoneChanged(zone), state);
-        }
-    }
-
     pub fn run_loop_iteration(&self, _state: &mut ClientState) {
         slint::platform::update_timers_and_animations();
 
@@ -322,10 +315,8 @@ impl WaylandPlatform {
 
 impl Platform for WaylandPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        let output = {
-            let mut outputs = self.shared_state.pending_outputs.write().unwrap();
-            outputs.pop().expect("no outputs left")
-        };
+        let output =
+            instance::take_pending_output().expect("output must be pending for it to take");
 
         let surface = self.get_output_surface(&output.id()).unwrap().clone();
         let surface_id = surface.id();
@@ -361,6 +352,11 @@ impl Platform for WaylandPlatform {
             surface_id,
         });
 
+        system::get()
+            .channel()
+            .send(SystemEvent::WindowAdapterCreated)
+            .unwrap();
+
         Ok(adapter)
     }
 
@@ -374,8 +370,6 @@ impl Platform for WaylandPlatform {
             let mut client_state = self.wayland.client_state.lock().unwrap();
             client_state.take().unwrap()
         };
-
-        self.run_initial_setup(&mut client_state);
 
         const TIMEOUT: Duration = Duration::from_millis(10_000);
 

@@ -152,37 +152,16 @@ impl ClientState {
     }
 
     fn destroy_output(&mut self, output: &WlOutput) {
-        {
-            let mut windows = self.shared_state.windows.write().unwrap();
-            windows.remove(&output.id());
-        }
-
-        {
-            let mut pending = self.shared_state.pending_outputs.write().unwrap();
-            let Some(index) = pending
-                .iter()
-                .enumerate()
-                .find_map(|(i, o)| (o.id() == output.id()).then_some(i))
-            else {
-                return;
-            };
-
-            pending.swap_remove(index);
-        }
+        let mut windows = self.shared_state.windows.write().unwrap();
+        windows.remove(&output.id());
     }
 
     fn create_output(&mut self, qh: &QueueHandle<Self>, output: WlOutput) {
-        let output_id = output.id();
-
-        {
-            let mut outputs = self.shared_state.pending_outputs.write().unwrap();
-            outputs.push(output.clone());
-        }
-
         // TODO(hack3rmann): move this to WaylandEvent::Fn
         self.slint_channel
-            .send(SlintEvent::Fn(SlintFnEvent(Box::new(move || {
-                instance::show(output_id)
+            .send(SlintEvent::Fn(SlintFnEvent(Box::new({
+                let output = output.clone();
+                move || instance::show(output)
             }))))
             .unwrap();
 
@@ -493,7 +472,7 @@ impl HasWindowHandle for SurfaceBundle {
 pub mod defaults {
     use super::*;
 
-    pub const EXCLUSIVE_ZONE: i32 = 15;
+    pub const EXCLUSIVE_ZONE: i32 = 0;
 
     pub fn get_zone() -> i32 {
         let zone = match instance::get_property("exclusive-zone") {

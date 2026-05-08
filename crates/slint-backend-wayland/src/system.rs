@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 #[derive(Clone, Debug, PartialEq)]
 pub enum SystemEvent {
     ExclusiveZoneChanged(i32),
+    WindowAdapterCreated,
 }
 
 #[derive(Default)]
