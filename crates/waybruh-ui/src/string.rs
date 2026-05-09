@@ -3,6 +3,11 @@ use regex::Regex;
 use roman_numerals::{FromRoman, ToRoman};
 use slint::SharedString;
 use slint_interpreter::{ComponentInstance, Value};
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    collections::{HashMap, hash_map::Entry},
+};
 
 pub struct StringGlobal;
 
@@ -203,6 +208,10 @@ impl GlobalCallback for StringContains {
     }
 }
 
+thread_local! {
+    static REGEX_CACHE: RefCell<HashMap<SharedString, Regex>> = RefCell::new(HashMap::new());
+}
+
 pub struct StringRegexReplace;
 
 impl GlobalCallback for StringRegexReplace {
@@ -219,16 +228,21 @@ impl GlobalCallback for StringRegexReplace {
             panic!("expected 3 parameters of type string");
         };
 
-        let regex = match Regex::new(regex) {
-            Ok(r) => r,
+        let result = REGEX_CACHE.with_borrow_mut(|cache| -> Result<Cow<str>, regex::Error> {
+            let regex = match cache.entry(regex.clone()) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => entry.insert(Regex::new(regex)?),
+            };
+
+            Ok(regex.replace_all(source, replacement.as_str()))
+        });
+
+        match result {
+            Ok(r) => Value::String(SharedString::from(r.as_ref())),
             Err(error) => {
-                eprintln!("invalid regular expression: {error}");
-                return Value::String(source.clone());
+                eprintln!("failed to compile regex: {error}");
+                Value::String(source.clone())
             }
-        };
-
-        let result = regex.replace_all(source, replacement.as_str());
-
-        Value::String(SharedString::from(result.as_ref()))
+        }
     }
 }
