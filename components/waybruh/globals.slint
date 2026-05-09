@@ -47,6 +47,11 @@ export global String {
     // 2. pattern: string -- the pattern to replace
     // 3. replacement: string -- the string as the replacement
     pure callback replace(string, string, string) -> string;
+
+    // 1. source: string -- the source string
+    // 2. regex: string -- the regular expression to match
+    // 3. replacement: string -- the string as the replacement
+    pure callback regex-replace(string, string, string) -> string;
 }
 
 export global Json {

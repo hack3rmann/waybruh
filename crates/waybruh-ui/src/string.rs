@@ -1,4 +1,5 @@
 use crate::{Global, GlobalCallback, InitError, InstanceExt};
+use regex::Regex;
 use roman_numerals::{FromRoman, ToRoman};
 use slint::SharedString;
 use slint_interpreter::{ComponentInstance, Value};
@@ -17,7 +18,8 @@ impl Global for StringGlobal {
             .add_global_callback::<StringTrimStart>()?
             .add_global_callback::<StringTrimEnd>()?
             .add_global_callback::<StringTrim>()?
-            .add_global_callback::<StringContains>()?;
+            .add_global_callback::<StringContains>()?
+            .add_global_callback::<StringRegexReplace>()?;
 
         Ok(())
     }
@@ -198,5 +200,35 @@ impl GlobalCallback for StringContains {
         };
 
         Value::Bool(source.contains(pattern.as_str()))
+    }
+}
+
+pub struct StringRegexReplace;
+
+impl GlobalCallback for StringRegexReplace {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "regex-replace";
+
+    fn execute(params: &[Value]) -> Value {
+        let [
+            Value::String(source),
+            Value::String(regex),
+            Value::String(replacement),
+        ] = params
+        else {
+            panic!("expected 3 parameters of type string");
+        };
+
+        let regex = match Regex::new(regex) {
+            Ok(r) => r,
+            Err(error) => {
+                eprintln!("invalid regular expression: {error}");
+                return Value::String(source.clone());
+            }
+        };
+
+        let result = regex.replace_all(source, replacement.as_str());
+
+        Value::String(SharedString::from(result.as_ref()))
     }
 }

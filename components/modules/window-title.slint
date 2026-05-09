@@ -14,7 +14,16 @@ export component WindowTitle inherits Text {
             return replace-firefox(title);
         }
 
+        if (ActiveCompositor.active-window-class == "obsidian") {
+            return replace-obsidian(title);
+        }
+
         return title;
+    }
+
+    pure function replace-obsidian(title: string) -> string {
+        let obsidian-removed = String.regex-replace(title, " - Obsidian Vault - Obsidian .*", "");
+        return "  \{obsidian-removed}";
     }
 
     pure function replace-firefox(title: string) -> string {

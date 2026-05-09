@@ -4516,6 +4516,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "lazy_static",
+ "regex",
  "roman-numerals",
  "serde_json",
  "serde_json_path",
