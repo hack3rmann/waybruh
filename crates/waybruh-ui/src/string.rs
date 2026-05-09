@@ -10,7 +10,14 @@ impl Global for StringGlobal {
         instance
             .add_global_callback::<StringIndianToRoman>()?
             .add_global_callback::<StringRomanToIndian>()?
-            .add_global_callback::<StringUnquote>()?;
+            .add_global_callback::<StringUnquote>()?
+            .add_global_callback::<StringStartsWith>()?
+            .add_global_callback::<StringEndsWith>()?
+            .add_global_callback::<StringReplace>()?
+            .add_global_callback::<StringTrimStart>()?
+            .add_global_callback::<StringTrimEnd>()?
+            .add_global_callback::<StringTrim>()?
+            .add_global_callback::<StringContains>()?;
 
         Ok(())
     }
@@ -79,5 +86,117 @@ impl GlobalCallback for StringUnquote {
         } else {
             Value::String(param.clone())
         }
+    }
+}
+
+pub struct StringStartsWith;
+
+impl GlobalCallback for StringStartsWith {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "starts-with";
+
+    fn execute(params: &[Value]) -> Value {
+        let [Value::String(source), Value::String(pattern)] = params else {
+            panic!("expected two parameters of type string");
+        };
+
+        Value::Bool(source.starts_with(pattern.as_str()))
+    }
+}
+
+pub struct StringEndsWith;
+
+impl GlobalCallback for StringEndsWith {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "ends-with";
+
+    fn execute(params: &[Value]) -> Value {
+        let [Value::String(source), Value::String(pattern)] = params else {
+            panic!("expected two parameters of type string");
+        };
+
+        Value::Bool(source.ends_with(pattern.as_str()))
+    }
+}
+
+pub struct StringReplace;
+
+impl GlobalCallback for StringReplace {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "replace";
+
+    fn execute(params: &[Value]) -> Value {
+        let [
+            Value::String(source),
+            Value::String(pattern),
+            Value::String(replacement),
+        ] = params
+        else {
+            panic!("expected 3 parameters of type string");
+        };
+
+        Value::String(SharedString::from(
+            source.replace(pattern.as_str(), replacement.as_str()),
+        ))
+    }
+}
+
+pub struct StringTrimStart;
+
+impl GlobalCallback for StringTrimStart {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "trim-start";
+
+    fn execute(params: &[Value]) -> Value {
+        let [Value::String(source)] = params else {
+            panic!("expected a parameter of type string");
+        };
+
+        Value::String(SharedString::from(source.trim_start()))
+    }
+}
+
+pub struct StringTrimEnd;
+
+impl GlobalCallback for StringTrimEnd {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "trim-end";
+
+    fn execute(params: &[Value]) -> Value {
+        let [Value::String(source)] = params else {
+            panic!("expected a parameter of type string");
+        };
+
+        Value::String(SharedString::from(source.trim_end()))
+    }
+}
+
+pub struct StringTrim;
+
+impl GlobalCallback for StringTrim {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "trim";
+
+    fn execute(params: &[Value]) -> Value {
+        let [Value::String(source)] = params else {
+            panic!("expected a parameter of type string");
+        };
+
+        Value::String(SharedString::from(source.trim()))
+    }
+}
+
+pub struct StringContains;
+
+impl GlobalCallback for StringContains {
+    const GLOBAL_NAME: &str = "String";
+    const CALLBACK_NAME: &str = "contains";
+
+    fn execute(params: &[Value]) -> Value {
+        let [Value::String(source), Value::String(pattern)] = params else {
+            panic!("expected two parameters of type string");
+        };
+
+        Value::Bool(source.contains(pattern.as_str()))
     }
 }

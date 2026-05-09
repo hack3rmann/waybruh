@@ -1,9 +1,40 @@
-import { ActiveCompositor } from "../waybruh/globals.slint";
+import { ActiveCompositor, String } from "../waybruh/globals.slint";
 
 export component WindowTitle inherits Text {
-    property <string> title <=> ActiveCompositor.active-window-title;
-
     color: white;
-    text <=> title;
+    text: replace-title(ActiveCompositor.active-window-title);
     overflow: elide;
+
+    pure function replace-title(title: string) -> string {
+        if (ActiveCompositor.active-window-class == "kitty") {
+            return "  [\{title}]";
+        }
+
+        if (ActiveCompositor.active-window-class == "org.mozilla.firefox") {
+            return replace-firefox(title);
+        }
+
+        return title;
+    }
+
+    pure function replace-firefox(title: string) -> string {
+        let firefox-dash-removed = String.replace(title, " — Mozilla Firefox", "");
+        let firefox-removed = String.replace(firefox-dash-removed, "Mozilla Firefox", "");
+
+        if (String.contains(firefox-removed, " - YouTube")) {
+            let youtube-removed = String.replace(firefox-removed, " - YouTube", "");
+            return "  \{String.trim(youtube-removed)}";
+        }
+
+        if (firefox-removed == "YouTube") {
+            return " ";
+        }
+
+        if (String.contains(firefox-removed, " at DuckDuckGo")) {
+            let duckduckgo-removed = String.replace(firefox-removed, " at DuckDuckGo", "");
+            return "  \{String.trim(duckduckgo-removed)}";
+        }
+
+        return "  \{String.trim(firefox-removed)}";
+    }
 }

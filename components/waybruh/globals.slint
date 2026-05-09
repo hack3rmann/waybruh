@@ -24,7 +24,29 @@ export global String {
     pure callback indian-to-roman(string) -> string;
     pure callback roman-to-indian(string) -> string;
 
+    pure callback trim-start(string) -> string;
+    pure callback trim-end(string) -> string;
+    pure callback trim(string) -> string;
+
+    // Turns quoted string into unqoted (so `"value"` becomes `value`)
     pure callback unquote(string) -> string;
+
+    // 1. source: string -- the source string
+    // 2. pattern: string -- the pattern to check
+    pure callback starts-with(string, string) -> bool;
+
+    // 1. source: string -- the source string
+    // 2. pattern: string -- the pattern to check
+    pure callback ends-with(string, string) -> bool;
+
+    // 1. source: string -- the source string
+    // 2. pattern: string -- the pattern to check
+    pure callback contains(string, string) -> bool;
+
+    // 1. source: string -- the source string
+    // 2. pattern: string -- the pattern to replace
+    // 3. replacement: string -- the string as the replacement
+    pure callback replace(string, string, string) -> string;
 }
 
 export global Json {
